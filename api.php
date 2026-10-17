@@ -10,6 +10,14 @@ $contentType = '';
 
 $response = '';
 
+if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, X-Requested-With');
+    http_response_code(204);
+    exit;
+}
+
 function sendFormSummaryByEmail(array $formConfig, array $data, array $attachments)
 {
     $formId = $formConfig['id'];
@@ -231,113 +239,128 @@ function handleFormSubmission()
     define('ATTRIBUTE_CAPTCHA_TYPE', 127);
     define('ATTRIBUTE_CAPTCHA_TURNSTILE_SECRET', 130);
 
-    if (isset($_POST['id'])) {
-        $formId = $_POST['id'];
-        $json = curl(
-            sprintf('%s/website/elements/%d', $apiHost, $formId)
-        );
-        $formConfig = json_decode($json, true);
-        $sendMail = $formConfig['form']['sendEmail'];
+    if (!isset($_POST['id']) || !trim((string) $_POST['id'])) {
+        return ['Form ID is missing', ['http_code' => 400]];
+    }
 
-        foreach ($_POST['form_' . $formId] as $fieldName => $fieldData) {
-            $fieldId = str_replace('ed-f-', '', $fieldName);
-            $isTurnstileCaptcha = false;
-            $turnstileCaptchaSecret = null;
+    $formId = trim((string) $_POST['id']);
+    if (!isset($_POST['form_' . $formId]) || !is_array($_POST['form_' . $formId])) {
+        return ['Form payload is missing', ['http_code' => 400]];
+    }
 
-            foreach ($formConfig['children'] as $formFieldConfig) {
-                if ($formFieldConfig['id'] == $fieldId && $formFieldConfig['type'] == 'form-captcha') {
-                    $formItemConfig = $formFieldConfig['formItem'];
-                    $attributes = $formItemConfig['values'];
-                    foreach ($attributes as $attribute) {
-                        if ($attribute['attribute'] == ATTRIBUTE_CAPTCHA_TYPE) {
-                            $isTurnstileCaptcha = $attribute['value'] === 'external';
-                        } elseif ($attribute['attribute'] == ATTRIBUTE_CAPTCHA_TURNSTILE_SECRET) {
-                            $turnstileCaptchaSecret = $attribute['value'];
-                        }
+    $json = curl(
+        sprintf('%s/website/elements/%s', $apiHost, rawurlencode($formId))
+    );
+
+    if (!$json) {
+        return ['Could not load form configuration', ['http_code' => 400]];
+    }
+
+    $formConfig = json_decode($json, true);
+    if (!is_array($formConfig) || empty($formConfig['form'])) {
+        return ['Invalid form configuration', ['http_code' => 400]];
+    }
+
+    $sendMail = $formConfig['form']['sendEmail'] ?? false;
+
+    foreach ($_POST['form_' . $formId] as $fieldName => $fieldData) {
+        $fieldId = str_replace('ed-f-', '', $fieldName);
+        $isTurnstileCaptcha = false;
+        $turnstileCaptchaSecret = null;
+
+        foreach ($formConfig['children'] as $formFieldConfig) {
+            if ($formFieldConfig['id'] == $fieldId && $formFieldConfig['type'] == 'form-captcha') {
+                $formItemConfig = $formFieldConfig['formItem'];
+                $attributes = $formItemConfig['values'];
+                foreach ($attributes as $attribute) {
+                    if ($attribute['attribute'] == ATTRIBUTE_CAPTCHA_TYPE) {
+                        $isTurnstileCaptcha = $attribute['value'] === 'external';
+                    } elseif ($attribute['attribute'] == ATTRIBUTE_CAPTCHA_TURNSTILE_SECRET) {
+                        $turnstileCaptchaSecret = $attribute['value'];
                     }
                 }
-            }
-
-            if (is_array($fieldData)) {
-                if (isset($fieldData['hash']) && isset($fieldData['text'])) {
-                    $clean = strtoupper(trim((string)$fieldData['text']));
-                    $hashedText = hash('sha256', $clean);
-                    if ($hashedText !== $fieldData['hash']) {
-                        $isValid = false;
-                        $httpCode = 400;
-                        $response = 'Wrong security code';
-                        break;
-                    } else {
-                        $isValid = true;
-                        $httpCode = 200;
-                        $response = sprintf(
-                            '<div class="wv-message wv-success">%s</div>',
-                            $formConfig['form']['successMessage']
-                        );
-                    }
-                }
-            } elseif ($isTurnstileCaptcha) {
-
-                $captchaResponse = $fieldData;
-                $data = http_build_query([
-                    'secret'   => $turnstileCaptchaSecret,
-                    'response' => $captchaResponse
-                ]);
-
-                $ch = curl_init();
-                curl_setopt($ch, CURLOPT_URL, 'https://challenges.cloudflare.com/turnstile/v0/siteverify');
-                curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-
-                $result = curl_exec($ch);
-                $httpCodeCaptcha = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                curl_close($ch);
-
-                $responseCaptcha = json_decode($result, true);
-
-                if (!$responseCaptcha['success'] && !empty($responseCaptcha['error-codes'])) {
-                    $isValid = false;
-                    $httpCode = 400;
-                    $response = 'Captcha validation failed: ' . implode(', ', $responseCaptcha['error-codes']);
-                    break;
-                }
-
-                if ($httpCodeCaptcha !== 200 || !$result) {
-                    $isValid = false;
-                    $httpCode = 400;
-                    $response = 'Could not validate captcha';
-                    break;
-                }
-
-                $isValid = true;
-                $httpCode = 200;
-                $response = sprintf(
-                    '<div class="wv-message wv-success">%s</div>',
-                    $formConfig['form']['successMessage']
-                );
             }
         }
 
-        if ($isValid) {
-            $formFieldsConfig = $formConfig['children'];
-            list($data, $attachments) = getFormData($formId, $formFieldsConfig);
-
-            if ($formConfig['form']['webhookUrl']) {
-                pushWebhook($formConfig, $data, $attachments);
-            }
-
-            if ($formConfig['form']['redirectTo'] && is_string($formConfig['form']['redirectTo'])) {
-                $response = '<script type="text/javascript">window.setTimeout(function() { window.location.href=' . json_encode($formConfig['form']['redirectTo']) . '; }, 1000);</script>';
-                $httpCode = 200;
-            }
-
-            if ($sendMail) {
-                if (!sendFormSummaryByEmail($formConfig, $data, $attachments)) {
-                    $response = 'Could not send e-mail';
+        if (is_array($fieldData)) {
+            if (isset($fieldData['hash']) && isset($fieldData['text'])) {
+                $clean = strtoupper(trim((string)$fieldData['text']));
+                $hashedText = hash('sha256', $clean);
+                if ($hashedText !== $fieldData['hash']) {
+                    $isValid = false;
                     $httpCode = 400;
+                    $response = 'Wrong security code';
+                    break;
+                } else {
+                    $isValid = true;
+                    $httpCode = 200;
+                    $response = sprintf(
+                        '<div class="wv-message wv-success">%s</div>',
+                        $formConfig['form']['successMessage']
+                    );
                 }
+            }
+        } elseif ($isTurnstileCaptcha) {
+
+            $captchaResponse = $fieldData;
+            $data = http_build_query([
+                'secret'   => $turnstileCaptchaSecret,
+                'response' => $captchaResponse
+            ]);
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, 'https://challenges.cloudflare.com/turnstile/v0/siteverify');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+
+            $result = curl_exec($ch);
+            $httpCodeCaptcha = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            $responseCaptcha = json_decode($result, true);
+
+            if (!$responseCaptcha['success'] && !empty($responseCaptcha['error-codes'])) {
+                $isValid = false;
+                $httpCode = 400;
+                $response = 'Captcha validation failed: ' . implode(', ', $responseCaptcha['error-codes']);
+                break;
+            }
+
+            if ($httpCodeCaptcha !== 200 || !$result) {
+                $isValid = false;
+                $httpCode = 400;
+                $response = 'Could not validate captcha';
+                break;
+            }
+
+            $isValid = true;
+            $httpCode = 200;
+            $response = sprintf(
+                '<div class="wv-message wv-success">%s</div>',
+                $formConfig['form']['successMessage']
+            );
+        }
+    }
+
+    if ($isValid) {
+        $formFieldsConfig = $formConfig['children'];
+        list($data, $attachments) = getFormData($formId, $formFieldsConfig);
+
+        if ($formConfig['form']['webhookUrl']) {
+            pushWebhook($formConfig, $data, $attachments);
+        }
+
+        if ($formConfig['form']['redirectTo'] && is_string($formConfig['form']['redirectTo'])) {
+            $response = '<script type="text/javascript">window.setTimeout(function() { window.location.href=' . json_encode($formConfig['form']['redirectTo']) . '; }, 1000);</script>';
+            $httpCode = 200;
+        }
+
+        if ($sendMail) {
+            if (!sendFormSummaryByEmail($formConfig, $data, $attachments)) {
+                $response = 'Could not send e-mail';
+                $httpCode = 400;
             }
         }
     }
@@ -444,6 +467,10 @@ function curl($url)
     curl_close($ch);
     return $return;
 }
+
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, X-Requested-With');
 
 if ($requestMethod == 'POST' && strpos($url, '/form_container/submit') !== false) {
     list($response, $headers) = handleFormSubmission();
