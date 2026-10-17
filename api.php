@@ -13,9 +13,53 @@ $response = '';
 if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, X-Requested-With');
+    header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Api-Token');
     http_response_code(204);
     exit;
+}
+
+function getConfiguredApiToken(): string
+{
+    $token = getenv('API_TOKEN') ?: getenv('SITEHUB_API_TOKEN') ?: getenv('OTABOYEV_API_TOKEN');
+    if (is_string($token) && trim($token) !== '') {
+        return trim($token);
+    }
+
+    // Local fallback for development only. Set a real token in the environment on production.
+    return 'otaboyev-dev-token';
+}
+
+function getRequestApiToken(): ?string
+{
+    $candidates = [
+        'HTTP_X_API_TOKEN',
+        'HTTP_X_API_TOKEN',
+        'REDIRECT_HTTP_X_API_TOKEN',
+        'X_API_TOKEN',
+    ];
+
+    foreach ($candidates as $key) {
+        if (isset($_SERVER[$key])) {
+            $token = trim((string) $_SERVER[$key]);
+            if ($token !== '') {
+                return $token;
+            }
+        }
+    }
+
+    return null;
+}
+
+function verifyApiToken(): bool
+{
+    $expected = getConfiguredApiToken();
+    $actual = getRequestApiToken();
+
+    if ($actual === null) {
+        return false;
+    }
+
+    return hash_equals($expected, $actual);
 }
 
 function sendFormSummaryByEmail(array $formConfig, array $data, array $attachments)
@@ -470,7 +514,45 @@ function curl($url)
 
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-Requested-With');
+header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Api-Token');
+
+if (preg_match('#^/websites/?$#', $url)) {
+    if (!verifyApiToken()) {
+        http_response_code(401);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['message' => 'Invalid API token', 'status' => 'error'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'status' => 'ok',
+        'websites' => [
+            [
+                'id' => 'portfolio-uz',
+                'name' => 'Sardorbek Otaboyev Portfolio',
+                'lang' => 'uz',
+                'url' => 'https://otaboyev-sardorbek.uz/uz/',
+                'active' => true,
+            ],
+            [
+                'id' => 'portfolio-ru',
+                'name' => 'Sardorbek Otaboyev Portfolio',
+                'lang' => 'ru',
+                'url' => 'https://otaboyev-sardorbek.uz/ru/',
+                'active' => true,
+            ],
+            [
+                'id' => 'portfolio-en',
+                'name' => 'Sardorbek Otaboyev Portfolio',
+                'lang' => 'en',
+                'url' => 'https://otaboyev-sardorbek.uz/en/',
+                'active' => true,
+            ],
+        ],
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    exit;
+}
 
 if ($requestMethod == 'POST' && strpos($url, '/form_container/submit') !== false) {
     list($response, $headers) = handleFormSubmission();
