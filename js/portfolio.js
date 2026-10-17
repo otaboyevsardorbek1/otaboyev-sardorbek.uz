@@ -87,6 +87,8 @@ document.addEventListener('DOMContentLoaded', function () {
   const followingNode = document.getElementById('github-following');
   const bioNode = document.getElementById('github-bio');
   const repoListNode = document.getElementById('github-repos-list');
+  const avatarImg = document.getElementById('github-avatar');
+  const avatarShell = document.getElementById('profile-avatar-shell');
 
   if (loginNode && reposNode && followersNode && followingNode) {
     fetch('https://api.github.com/users/otaboyevsardorbek1')
@@ -101,6 +103,14 @@ document.addEventListener('DOMContentLoaded', function () {
         followingNode.textContent = data.following || '0';
         if (bioNode && data.bio) {
           bioNode.textContent = data.bio;
+        }
+
+        if (avatarImg && data.avatar_url) {
+          avatarImg.src = data.avatar_url;
+          avatarImg.alt = data.login || 'GitHub avatar';
+          if (avatarShell) {
+            avatarShell.classList.add('has-image');
+          }
         }
       })
       .catch(function () {
