@@ -1,0 +1,289 @@
+# ============================================
+# MAXFIY FAYLLAR (ENG MUHIM!)
+# ============================================
+github_keys.txt
+*keys.txt
+*.key
+*.pem
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+secrets.json
+credentials.json
+config.local.php
+config.local.js
+.DS_Store
+
+# ============================================
+# PHP
+# ============================================
+# Composer
+/vendor/
+composer.lock
+composer.phar
+
+# PHP-specific
+*.log
+*.cache
+.php_cs.cache
+.phpunit.result.cache
+.phpunit.cache/
+build/
+coverage/
+*.tar.gz
+
+# Laravel (agar ishlatsangiz)
+/bootstrap/cache/*
+!/bootstrap/cache/.gitignore
+/storage/*.key
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/logs/*
+/public/storage
+/public/hot
+/public/uploads/*
+Homestead.yaml
+Homestead.json
+
+# WordPress (agar ishlatsangiz)
+wp-config.php
+wp-content/uploads/
+wp-content/cache/
+wp-content/upgrade/
+wp-content/backup-*/
+*.sql
+*.sqlite
+
+# ============================================
+# NODE.JS / NPM / YARN
+# ============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Package manager lock (xohishingizga ko'ra)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+lib-cov
+coverage/
+.nyc_output/
+.grunt/
+.lock-wscript
+build/Release/
+node_modules/.cache/
+.node_repl_history
+*.tgz
+.yarn-integrity
+
+# Node env
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ============================================
+# FRONTEND BUILD
+# ============================================
+dist/
+build/
+out/
+.next/
+.nuxt/
+.vuepress/dist/
+.cache/
+.parcel-cache/
+.svelte-kit/
+/public/build/
+/public/hot/
+/public/storage/
+
+# Compiled files
+*.min.js.map
+*.min.css.map
+*.js.map
+*.css.map
+
+# ============================================
+# IDE / EDITOR
+# ============================================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+*.tmproj
+*~
+
+# ============================================
+# OPERATING SYSTEM
+# ============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+*.lnk
+*~
+.fuse_hidden*
+.nfs*
+
+# ============================================
+# LOGS
+# ============================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log.*
+error.log
+access.log
+
+# ============================================
+# CACHE / TEMP
+# ============================================
+.cache/
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.orig
+*.swp
+*.swo
+
+# ============================================
+# BACKUP FILES
+# ============================================
+*.backup
+*.bak
+*~
+*.copy
+*.old
+*.orig
+*.save
+
+# ============================================
+# TESTING
+# ============================================
+/coverage/
+.coverage
+*.lcov
+.nyc_output/
+junit.xml
+test-results/
+tests/_output/
+
+# ============================================
+# DATABASE
+# ============================================
+*.sqlite
+*.sqlite3
+*.db
+*.mdb
+*.accdb
+dump.sql
+database.sql
+
+# ============================================
+# MEDIA / UPLOADS (katta fayllar)
+# ============================================
+# Agar saytning rasm fayllarini saqlamasangiz:
+# uploads/
+# media/
+# images/uploaded/
+# *.mp4
+# *.mov
+# *.avi
+# *.mkv
+# *.zip
+# *.rar
+# *.7z
+
+# ============================================
+# GIT / SSH (XAVFSIZLIK!)
+# ============================================
+.git-credentials
+.gitconfig.local
+.ssh/
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+known_hosts
+
+# ============================================
+# CPANEL / HOSTING
+# ============================================
+.cpanel.yml
+.cpanel.cache
+.cpanel*
+access-logs/
+cpbackup-*
+php.ini
+.user.ini
+.htaccess.bak
+.htpasswd
+
+# ============================================
+# SITEMAP / SEO (agar generatsiya qilinsa)
+# ============================================
+# sitemap.xml
+# robots.txt
+
+# ============================================
+# PACKAGE FILES
+# ============================================
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+*.gz
+*.bz2
+*.xz
+*.tgz
+
+# ============================================
+# ESLINT / PRETTIER / TYPESCRIPT
+# ============================================
+.eslintcache
+.prettiercache
+*.tsbuildinfo
+.tscache
+
+# ============================================
+# SLSA / SECURITY
+# ============================================
+*.intoto.jsonl
+*.sig
+*.sigstore
