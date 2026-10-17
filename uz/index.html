@@ -33,6 +33,10 @@
           <a href="../en/">EN</a>
         </div>
 
+        <button class="theme-toggle" type="button" aria-label="Rang rejimini almashtirish">
+          <span class="theme-toggle-icon">☀️</span>
+        </button>
+
         <button class="mobile-toggle" aria-label="Menyu ochish">Menyu</button>
       </div>
     </header>
@@ -68,15 +72,15 @@
               </div>
               <div class="profile-stats">
                 <div class="stat-box">
-                  <strong>5+</strong>
+                  <strong data-target="5" data-suffix="+">0</strong>
                   <span>yil</span>
                 </div>
                 <div class="stat-box">
-                  <strong>20+</strong>
+                  <strong data-target="20" data-suffix="+">0</strong>
                   <span>loyihalar</span>
                 </div>
                 <div class="stat-box">
-                  <strong>99%</strong>
+                  <strong data-target="99" data-suffix="%">0</strong>
                   <span>diqqat</span>
                 </div>
               </div>
@@ -165,8 +169,15 @@
             </div>
           </div>
 
+          <div class="project-filters" aria-label="Loyiha filtrlari">
+            <button class="filter-btn active" type="button" data-filter="all">Barchasi</button>
+            <button class="filter-btn" type="button" data-filter="ai">AI</button>
+            <button class="filter-btn" type="button" data-filter="bots">Botlar</button>
+            <button class="filter-btn" type="button" data-filter="api">API</button>
+          </div>
+
           <div class="projects-grid">
-            <article class="project-card">
+            <article class="project-card" data-category="ai">
               <span class="project-tag">AI</span>
               <h3>GitInsight Dashboard</h3>
               <p>GitHub profillari uchun analitika platformasi: faoliyat grafigi va repozitoriyalar statistikasi.</p>
@@ -180,7 +191,7 @@
               </div>
             </article>
 
-            <article class="project-card">
+            <article class="project-card" data-category="bots">
               <span class="project-tag">Bots</span>
               <h3>Telegram Operations</h3>
               <p>Bildirishnomalar, to‘lovlar, vazifalar va jamoa avtomatlashtirish uchun biznes botlari.</p>
@@ -194,7 +205,7 @@
               </div>
             </article>
 
-            <article class="project-card">
+            <article class="project-card" data-category="api">
               <span class="project-tag">API</span>
               <h3>Service Platform</h3>
               <p>Mahsulot jamoalari uchun yuqori unumli backend xizmatlari, xavfsiz API va qulay ishlash.</p>

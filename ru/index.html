@@ -33,6 +33,10 @@
           <a href="../en/">EN</a>
         </div>
 
+        <button class="theme-toggle" type="button" aria-label="Переключить тему">
+          <span class="theme-toggle-icon">☀️</span>
+        </button>
+
         <button class="mobile-toggle" aria-label="Открыть меню">Меню</button>
       </div>
     </header>
@@ -69,15 +73,15 @@
               </div>
               <div class="profile-stats">
                 <div class="stat-box">
-                  <strong>5+</strong>
+                  <strong data-target="5" data-suffix="+">0</strong>
                   <span>лет</span>
                 </div>
                 <div class="stat-box">
-                  <strong>20+</strong>
+                  <strong data-target="20" data-suffix="+">0</strong>
                   <span>проектов</span>
                 </div>
                 <div class="stat-box">
-                  <strong>99%</strong>
+                  <strong data-target="99" data-suffix="%">0</strong>
                   <span>внимания</span>
                 </div>
               </div>
@@ -166,8 +170,15 @@
             </div>
           </div>
 
+          <div class="project-filters" aria-label="Фильтры проектов">
+            <button class="filter-btn active" type="button" data-filter="all">Все</button>
+            <button class="filter-btn" type="button" data-filter="ai">AI</button>
+            <button class="filter-btn" type="button" data-filter="bots">Боты</button>
+            <button class="filter-btn" type="button" data-filter="api">API</button>
+          </div>
+
           <div class="projects-grid">
-            <article class="project-card">
+            <article class="project-card" data-category="ai">
               <span class="project-tag">AI</span>
               <h3>GitInsight Dashboard</h3>
               <p>Аналитическая платформа для GitHub-профилей с графиками активности и метриками репозиториев.</p>
@@ -181,7 +192,7 @@
               </div>
             </article>
 
-            <article class="project-card">
+            <article class="project-card" data-category="bots">
               <span class="project-tag">Bots</span>
               <h3>Telegram Operations</h3>
               <p>Системы бизнес-ботов для уведомлений, платежей, автоматизации и внутренних процессов.</p>
@@ -195,7 +206,7 @@
               </div>
             </article>
 
-            <article class="project-card">
+            <article class="project-card" data-category="api">
               <span class="project-tag">API</span>
               <h3>Service Platform</h3>
               <p>Высокопроизводительные backend-сервисы для продуктовых команд с безопасными API и удобной разработкой.</p>

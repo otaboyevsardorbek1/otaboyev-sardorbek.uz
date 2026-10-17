@@ -15,6 +15,60 @@
   --shadow-soft: 0 18px 40px rgba(10, 16, 28, 0.42);
 }
 
+body.light-theme {
+  --bg: #eef5ff;
+  --bg-soft: #f7faff;
+  --panel: rgba(255, 255, 255, 0.88);
+  --panel-strong: #ffffff;
+  --line: rgba(37, 99, 235, 0.12);
+  --text: #0f172a;
+  --text-soft: #475569;
+  --primary: #3b82f6;
+  --primary-2: #14b8a6;
+  --primary-3: #7c3aed;
+  --accent: #f97316;
+  --neon: rgba(20, 184, 166, 0.16);
+  --shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+  --shadow-soft: 0 14px 30px rgba(148, 163, 184, 0.18);
+}
+
+body.light-theme {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(96, 165, 250, 0.18), transparent 24%),
+    radial-gradient(circle at 80% 12%, rgba(45, 212, 191, 0.14), transparent 18%),
+    linear-gradient(135deg, #edf6ff 0%, #f8fbff 35%, #eef2ff 100%);
+}
+
+body.light-theme .site-header {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+body.light-theme .lang-switcher,
+body.light-theme .filter-btn,
+body.light-theme .theme-toggle,
+body.light-theme .contact-form,
+body.light-theme .feature-item,
+body.light-theme .repo-item,
+body.light-theme .mini-stat,
+body.light-theme .github-pill,
+body.light-theme .contact-link,
+body.light-theme .text-card,
+body.light-theme .feature-card,
+body.light-theme .project-card,
+body.light-theme .contact-card,
+body.light-theme .github-card {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+body.light-theme .contact-link {
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+body.light-theme .project-card::before,
+body.light-theme .hero-card::before {
+  opacity: 0.8;
+}
+
 ::selection {
   background: rgba(124, 156, 255, 0.35);
   color: var(--text);
@@ -47,6 +101,25 @@ body::before {
     radial-gradient(circle at 30% 20%, rgba(86, 242, 212, 0.12), transparent 25%);
   background-size: 48px 48px, 48px 48px, 100% 100%;
   mask-image: radial-gradient(circle at center, black 30%, transparent 100%);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  width: 540px;
+  height: 540px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(124, 156, 255, 0.24), rgba(124, 156, 255, 0.04) 35%, transparent 68%);
+  top: -120px;
+  right: -80px;
+  pointer-events: none;
+  filter: blur(12px);
+  animation: driftBlob 16s ease-in-out infinite alternate;
+}
+
+@keyframes driftBlob {
+  0% { transform: translate3d(0, 0, 0) scale(0.98); }
+  100% { transform: translate3d(-18px, 18px, 0) scale(1.08); }
 }
 
 a { color: inherit; text-decoration: none; }
@@ -714,20 +787,24 @@ img { max-width: 100%; display: block; }
 
 .repo-item {
   padding: 14px 16px;
-  background: rgba(10, 18, 30, 0.68);
+  background: linear-gradient(180deg, rgba(13, 23, 38, 0.82), rgba(11, 18, 29, 0.7));
   border: 1px solid var(--line);
   border-radius: 14px;
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
 }
 
 .repo-item:hover {
   transform: translateY(-2px);
-  border-color: rgba(86, 242, 212, 0.3);
+  border-color: rgba(86, 242, 212, 0.32);
+  box-shadow: 0 20px 30px rgba(7, 12, 20, 0.18);
 }
 
 .repo-item strong {
   display: block;
   margin-bottom: 6px;
+  font-size: 0.96rem;
+  letter-spacing: 0.01em;
 }
 
 .repo-meta {
@@ -777,6 +854,54 @@ img { max-width: 100%; display: block; }
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
+.theme-toggle {
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(9, 17, 29, 0.7);
+  color: var(--text);
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.theme-toggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(86, 242, 212, 0.38);
+}
+
+.theme-toggle-icon {
+  font-size: 1.1rem;
+}
+
+.project-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 22px;
+}
+
+.filter-btn {
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(10, 18, 30, 0.52);
+  color: var(--text-soft);
+  border-radius: 999px;
+  padding: 9px 14px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.filter-btn.active,
+.filter-btn:hover {
+  background: linear-gradient(135deg, rgba(124, 156, 255, 0.18), rgba(86, 242, 212, 0.14));
+  border-color: rgba(86, 242, 212, 0.34);
+  color: var(--text);
+}
+
 .contact-form input:focus,
 .contact-form textarea:focus {
   outline: none;
@@ -794,10 +919,30 @@ img { max-width: 100%; display: block; }
   min-height: 20px;
   color: var(--primary-2);
   font-size: 0.82rem;
+  transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
 .form-status.error {
   color: #ff8d7a;
+}
+
+.form-status.success {
+  color: #7af2c9;
+}
+
+.form-status.success-flash {
+  animation: successPulse 0.45s ease;
+}
+
+@keyframes successPulse {
+  0% { transform: scale(0.96); opacity: 0.7; }
+  50% { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.contact-form.is-success {
+  box-shadow: 0 0 0 1px rgba(122, 242, 201, 0.28), 0 18px 38px rgba(12, 25, 33, 0.36);
+  border-color: rgba(122, 242, 201, 0.24);
 }
 
 .cv-button {
@@ -897,4 +1042,78 @@ img { max-width: 100%; display: block; }
   .hero-meta { flex-direction: column; gap: 10px; }
   .profile-stats { grid-template-columns: 1fr; }
   .footer-inner { flex-direction: column; align-items: flex-start; }
+}
+
+.site-header.scrolled {
+  background: rgba(6, 19, 31, 0.86);
+  box-shadow: 0 20px 44px rgba(4, 12, 23, 0.28);
+  border-bottom-color: rgba(124, 156, 255, 0.18);
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 0.7s ease, transform 0.7s ease, box-shadow 0.25s ease;
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hero-card,
+.project-card,
+.feature-card,
+.github-card,
+.contact-card,
+.text-card,
+.feature-item,
+.stat-box {
+  will-change: transform;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.hero-card:hover,
+.project-card:hover,
+.feature-card:hover,
+.github-card:hover,
+.contact-card:hover,
+.text-card:hover,
+.feature-item:hover {
+  box-shadow: 0 22px 52px rgba(6, 13, 25, 0.52), 0 0 24px rgba(124, 156, 255, 0.12);
+}
+
+.hero-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-card::before {
+  content: "";
+  position: absolute;
+  inset: -25% auto auto -25%;
+  width: 60%;
+  height: 60%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(86, 242, 212, 0.3), transparent 62%);
+  filter: blur(10px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal,
+  .reveal.is-visible,
+  .hero-card,
+  .project-card,
+  .feature-card,
+  .github-card,
+  .contact-card,
+  .text-card,
+  .feature-item,
+  .stat-box,
+  .site-header {
+    transition: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
 }
