@@ -1,0 +1,224 @@
+================================================================================
+                          CURRICULUM VITAE
+                  OTABOYEV SARDORBEK DAVRONBEK UGLI
+================================================================================
+
+PERSONAL INFORMATION
+--------------------------------------------------------------------------------
+  Full Name       : Otaboyev Sardorbek Davronbek ugli
+  Date of Birth   : 23 September 2005
+  Gender          : Male
+  Nationality     : Uzbek
+  Location        : Khorezm region, Kushkupir district, Uzbekistan
+  Address         : Khorezm region, Kushkupir district, Xonobod SSG,
+                    Xonobod MSG, Zilol street, house 69
+  Phone           : +998 91 861 04 70
+  Email           : otaboyevsardorbek1@gmail.com
+  Alt Email       : otaboyevsardorbek295@gmail.com
+  GitHub          : https://github.com/otaboyevsardorbek1
+  Telegram        : https://t.me/prodevuzoff
+  Dev Blog        : https://t.me/otaboyev_sardorbek_blog_dev
+
+PROFESSIONAL TITLE
+--------------------------------------------------------------------------------
+  Backend Developer | AI & Automation Specialist
+
+PROFILE SUMMARY
+--------------------------------------------------------------------------------
+  Self-driven Backend Developer and Tool Maker from Uzbekistan, focused on
+  building bots, APIs, AI integrations, and developer tools. Experienced in
+  designing scalable backend services with Go, Python, and PHP, and in
+  deploying production-ready containerized infrastructure with Docker.
+  Currently exploring local LLM workflows, MCP protocol servers, and
+  AI-powered automation pipelines.
+
+CURRENT FOCUS
+--------------------------------------------------------------------------------
+  - Backend development with Go and Python
+  - AI integrations and automation
+  - Dockerized service delivery and deployment
+  - Developer productivity tools and bot constructors
+  - MCP servers and local LLM workflows
+
+EDUCATION
+--------------------------------------------------------------------------------
+  Bachelor of Computer Science
+  Namangan State University (NamDU)
+  Faculty of Physics and Mathematics
+  Field: Computer Science and Programming Technologies
+  Student ID   : 309231101913
+  JSHSHIR      : 52309057120033
+  Group        : K.KID-AU-23
+  Study Mode   : Evening (Bachelor's degree)
+  Payment      : Contract-based
+  Current Year : 4th year (2026-2027 academic year)
+  Current Sem. : 7th semester
+
+  ACADEMIC PERFORMANCE
+  ------------------------------------------------------------------------------
+  Academic Year   Course    GPA     Credits    Debt (paid/total)    Method
+  ------------------------------------------------------------------------------
+  2025 - 2026     3rd       4.77    48.0       0 / 12               Yearly GPA
+  2024 - 2025     2nd       3.76    51.0       0 / 11               Yearly GPA
+  2023 - 2024     1st       3.30    60.0       0 / 13               Yearly GPA
+  ------------------------------------------------------------------------------
+
+  RELEVANT COURSEWORK
+  ------------------------------------------------------------------------------
+  - Cloud Technologies
+  - Cryptography Methods
+  - Multimedia Technologies
+  - Web Technologies
+  - Human-Computer Interaction
+  - Database Systems
+  - Algorithms and Data Structures
+  - System Programming
+  - Mobile Application Development
+  - Programming Technologies
+  - Discrete Mathematics
+  - Mathematical Analysis
+  - Linear Algebra
+  - Probability Theory and Mathematical Statistics
+  - Computer Networks
+  - Information Security Fundamentals
+
+TECHNICAL SKILLS
+--------------------------------------------------------------------------------
+  PROGRAMMING LANGUAGES
+    - Go (Golang)              [Advanced]
+    - Python                   [Advanced]
+    - PHP                      [Advanced]
+    - JavaScript               [Intermediate]
+    - Bash / Shell Scripting   [Intermediate]
+    - SQL                      [Advanced]
+
+  BACKEND FRAMEWORKS
+    - Go: net/http, Gin, Fiber
+    - Python: FastAPI, Flask
+    - PHP: Slim, Laravel (basic)
+    - Node.js: Express (basic)
+
+  DATABASES
+    - PostgreSQL   [Advanced]
+    - MySQL        [Advanced]
+    - MongoDB      [Intermediate]
+    - SQLite       [Advanced]
+
+  DEVOPS & INFRASTRUCTURE
+    - Docker & Docker Compose
+    - Linux (Ubuntu, CentOS)
+    - Nginx, Apache
+    - GitHub Actions (CI/CD)
+    - Git, GitHub
+    - Server monitoring and logging
+
+  AI & AUTOMATION
+    - Ollama (local LLM)
+    - DeepSeek API
+    - Gemini API
+    - OpenAI API
+    - MCP Protocol (Model Context Protocol)
+    - Telegram Bot API
+    - Prompt engineering
+    - Local LLM workflows
+
+  TOOLS
+    - VS Code, JetBrains IDEs
+    - Postman
+    - Figma (UI design)
+    - DBeaver, pgAdmin
+    - Termius, SSH
+
+LANGUAGES
+--------------------------------------------------------------------------------
+  - Uzbek      : Native
+  - Russian    : Intermediate
+  - English    : Intermediate (technical reading/writing)
+
+PROFESSIONAL EXPERIENCE
+--------------------------------------------------------------------------------
+  BACKEND DEVELOPER & AI AUTOMATION SPECIALIST
+  Self-employed / Freelance | 2022 - Present
+
+  Key responsibilities and achievements:
+    - Built scalable backend services and REST API systems using Go,
+      Python, and PHP
+    - Designed and deployed AI-integrated Telegram bots with admin panels
+    - Developed custom MCP (Model Context Protocol) servers for LLM
+      integration workflows
+    - Created developer utilities for localization (i18n) and productivity
+    - Delivered containerized deployments using Docker & Docker Compose
+    - Managed Linux servers (Nginx, Apache, PostgreSQL, MySQL)
+    - Implemented CI/CD pipelines with GitHub Actions
+
+PROJECTS
+--------------------------------------------------------------------------------
+  1. E-COMMERCE API
+     Description : Scalable e-commerce backend with JWT auth, product
+                   CRUD, and order management
+     Stack       : Go, PostgreSQL, Docker
+     Status      : Live
+
+  2. AI TELEGRAM BOT
+     Description : Multi-language Telegram bot powered by Ollama and
+                   DeepSeek, with admin panel and user management
+     Stack       : Python, Ollama, Telegram Bot API
+     Status      : Live
+
+  3. DOCKER DEPLOY STACK
+     Description : Production-ready Docker Compose stack with Nginx,
+                   PostgreSQL, Redis, and monitoring, powered by
+                   GitHub Actions CI/CD
+     Stack       : Docker, Nginx, GitHub Actions
+     Status      : Open Source
+
+  4. MCP SERVER TOOLKIT
+     Description : Model Context Protocol servers integrating local LLMs
+                   (Ollama) with tool calling and context management
+     Stack       : Python, MCP Protocol, Ollama
+     Status      : Case Study
+
+  5. PORTFOLIO CMS
+     Description : Lightweight CMS built on PHP and MySQL, integrated
+                   with Sitejet API, form handling, and image proxy
+     Stack       : PHP, MySQL, Sitejet API
+     Status      : Open Source
+
+  6. LINUX MONITORING BOT
+     Description : Real-time server monitoring bot reporting CPU, RAM,
+                   disk, and network stats via Telegram
+     Stack       : Bash, Linux, Telegram Bot API
+     Status      : Live
+
+CERTIFICATIONS & ACHIEVEMENTS
+--------------------------------------------------------------------------------
+  - Consistently high GPA (4.77 in the latest academic year)
+  - Active open-source contributor on GitHub
+  - Regular technical writer on Telegram dev blog
+  - No academic debt across all completed semesters
+
+INTERESTS
+--------------------------------------------------------------------------------
+  - Open-source contribution
+  - Local LLM experimentation
+  - Developer tooling
+  - Automation and scripting
+  - Cloud-native architecture
+  - Technical writing and knowledge sharing
+
+AVAILABILITY
+--------------------------------------------------------------------------------
+  Status          : Open to Work
+  Work Mode       : Remote-friendly
+  Preferred Roles : Backend Developer, AI Engineer, DevOps Engineer,
+                    Automation Specialist
+  Location        : Uzbekistan (Remote worldwide)
+
+REFERENCES
+--------------------------------------------------------------------------------
+  Available upon request.
+
+================================================================================
+  Last updated: October 2026
+  This CV was generated from verified academic and professional records.
+================================================================================

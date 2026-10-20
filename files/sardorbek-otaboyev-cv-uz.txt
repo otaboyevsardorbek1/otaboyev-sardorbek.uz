@@ -1,0 +1,228 @@
+================================================================================
+                              REZYUME (CV)
+                   OTABOYEV SARDORBEK DAVRONBEK O'G'LI
+================================================================================
+
+SHAXSIY MA'LUMOTLAR
+--------------------------------------------------------------------------------
+  F.I.O.           : Otaboyev Sardorbek Davronbek o'g'li
+  Tug'ilgan sana   : 23.09.2005
+  Jinsi            : Erkak
+  Millati          : O'zbek
+  Manzil           : Xorazm viloyati, Qo'shko'pir tumani, O'zbekiston
+  Uy manzili       : Xorazm viloyati, Qo'shko'pir tumani,
+                     Xonobod SSG, Xonobod MSG, Zilol ko'chasi, 69-uy
+  Telefon          : +998 91 861 04 70
+  Email            : otaboyevsardorbek1@gmail.com
+  Zaxira email     : otaboyevsardorbek295@gmail.com
+  GitHub           : https://github.com/otaboyevsardorbek1
+  Telegram         : https://t.me/prodevuzoff
+  Dev blog         : https://t.me/otaboyev_sardorbek_blog_dev
+
+KASBIY UNVON
+--------------------------------------------------------------------------------
+  Backend dasturchi | AI va avtomatlashtirish mutaxassisi
+
+QISQA TAVSIF
+--------------------------------------------------------------------------------
+  O'z-o'zini rivojlantiruvchi backend dasturchi va "tool maker" (vosita
+  yaratuvchi). Botlar, API'lar, AI integratsiyalar va developer vositalari
+  yaratishga ixtisoslashgan. Go, Python va PHP'da masshtablanadigan
+  backend xizmatlarini loyihalash va Docker yordamida production-ga
+  tayyor konteyner infratuzilmasini deploy qilish tajribasiga ega.
+  Hozirda mahalliy LLM workflow'lari, MCP protokoli serverlari va
+  AI-powered avtomatlashtirish pipeline'larini o'rganmoqda.
+
+HOZIRGI FOKUS
+--------------------------------------------------------------------------------
+  - Go va Python'da backend dasturlash
+  - AI integratsiyalar va avtomatlashtirish
+  - Docker'da xizmatlarni yetkazib berish va deploy qilish
+  - Developer produktivlik vositalari va bot konstruktorlari
+  - MCP serverlar va mahalliy LLM workflow'lari
+
+TA'LIM
+--------------------------------------------------------------------------------
+  Kompyuter ilmlari bakalavri
+  Namangan davlat universiteti (NamDU)
+  Fizika-matematika fakulteti
+  Yo'nalish: Kompyuter ilmlari va dasturlash texnologiyalari
+  Talaba ID       : 309231101913
+  JSHSHIR         : 52309057120033
+  Guruh           : K.KID-AU-23
+  Ta'lim shakli   : Kechki (bakalavr)
+  To'lov shakli   : Shartnoma asosida
+  Hozirgi kurs    : 4-kurs (2026-2027 o'quv yili)
+  Hozirgi semestr : 7-semestr
+
+  AKADEMIK KO'RSATKICHLAR
+  ------------------------------------------------------------------------------
+  O'quv yili      Kurs      GPA     Kredit     Qarz (to'langan/jami)   Usul
+  ------------------------------------------------------------------------------
+  2025 - 2026     3-kurs    4.77    48.0       0 / 12                   Yillik GPA
+  2024 - 2025     2-kurs    3.76    51.0       0 / 11                   Yillik GPA
+  2023 - 2024     1-kurs    3.30    60.0       0 / 13                   Yillik GPA
+  ------------------------------------------------------------------------------
+
+  O'QILGAN FANLAR
+  ------------------------------------------------------------------------------
+  - Bulutli texnologiyalar
+  - Kriptografik usullar
+  - Multimedia texnologiyalari
+  - Web texnologiyalar
+  - Inson-kompyuter interfeysi
+  - Ma'lumotlar bazasi tizimlari
+  - Algoritmlar va ma'lumotlar strukturasi
+  - Tizimli dasturlash
+  - Mobil ilovalar yaratish
+  - Dasturlash texnologiyalari
+  - Diskret matematika
+  - Matematik analiz
+  - Chiziqli algebra
+  - Ehtimollar nazariyasi va matematik statistika
+  - Kompyuter tarmoqlari
+  - Axborot xavfsizligi asoslari
+
+TEXNIK KO'NIKMALAR
+--------------------------------------------------------------------------------
+  DASTURLASH TILLARI
+    - Go (Golang)              [Yuqori]
+    - Python                   [Yuqori]
+    - PHP                      [Yuqori]
+    - JavaScript               [O'rta]
+    - Bash / Shell scripting   [O'rta]
+    - SQL                      [Yuqori]
+
+  BACKEND FREYMVEORLAR
+    - Go: net/http, Gin, Fiber
+    - Python: FastAPI, Flask
+    - PHP: Slim, Laravel (asosiy)
+    - Node.js: Express (asosiy)
+
+  MA'LUMOTLAR BAZASI
+    - PostgreSQL   [Yuqori]
+    - MySQL        [Yuqori]
+    - MongoDB      [O'rta]
+    - SQLite       [Yuqori]
+
+  DEVOPS VA INFRATUZILMA
+    - Docker & Docker Compose
+    - Linux (Ubuntu, CentOS)
+    - Nginx, Apache
+    - GitHub Actions (CI/CD)
+    - Git, GitHub
+    - Server monitoring va logging
+
+  AI VA AVTOMATLASHTIRISH
+    - Ollama (mahalliy LLM)
+    - DeepSeek API
+    - Gemini API
+    - OpenAI API
+    - MCP Protocol (Model Context Protocol)
+    - Telegram Bot API
+    - Prompt engineering
+    - Mahalliy LLM workflow'lari
+
+  VOSITALAR
+    - VS Code, JetBrains IDE
+    - Postman
+    - Figma (UI dizayn)
+    - DBeaver, pgAdmin
+    - Termius, SSH
+
+TILLAR
+--------------------------------------------------------------------------------
+  - O'zbek      : Ona tili
+  - Rus         : O'rta
+  - Ingliz      : O'rta (texnik o'qish/yozish)
+
+KASBIY TAJRIBA
+--------------------------------------------------------------------------------
+  BACKEND DASTURCHI VA AI-AVTOMATLASHTIRISH MUTAXASSISI
+  O'z-o'zini ish bilan ta'minlash / Frilans | 2022 - hozirgacha
+
+  Asosiy vazifalar va yutuqlar:
+    - Go, Python va PHP yordamida masshtablanadigan backend xizmatlar
+      va REST API tizimlarini yaratdim
+    - AI integratsiyalangan Telegram botlarini admin panellari bilan
+      loyihalash va deploy qildim
+    - LLM integratsiya workflow'lari uchun maxsus MCP (Model Context
+      Protocol) serverlarini ishlab chiqdim
+    - Lokalizatsiya (i18n) va produktivlik uchun developer vositalarini
+      yaratdim
+    - Docker & Docker Compose yordamida konteyner deploy'larini amalga
+      oshirdim
+    - Linux serverlarni boshqardim (Nginx, Apache, PostgreSQL, MySQL)
+    - GitHub Actions bilan CI/CD pipeline'larini sozladim
+
+LOYIHALAR
+--------------------------------------------------------------------------------
+  1. E-COMMERCE API
+     Tavsif  : JWT auth, mahsulot CRUD va buyurtmalarni boshqarish
+               bilan masshtablanadigan e-commerce backend
+     Stack   : Go, PostgreSQL, Docker
+     Holat   : Ishlaydi
+
+  2. AI TELEGRAM BOT
+     Tavsif  : Ollama va DeepSeek asosida ko'p tilli Telegram bot,
+               admin panel va foydalanuvchi boshqaruvi bilan
+     Stack   : Python, Ollama, Telegram Bot API
+     Holat   : Ishlaydi
+
+  3. DOCKER DEPLOY STACK
+     Tavsif  : Nginx, PostgreSQL, Redis va monitoring bilan production-
+               ga tayyor Docker Compose stack, GitHub Actions CI/CD
+     Stack   : Docker, Nginx, GitHub Actions
+     Holat   : Open Source
+
+  4. MCP SERVER TOOLKIT
+     Tavsif  : Mahalliy LLM (Ollama) bilan tool calling va kontekst
+               boshqaruvini integratsiyalovchi MCP serverlar
+     Stack   : Python, MCP Protocol, Ollama
+     Holat   : Case Study
+
+  5. PORTFOLIO CMS
+     Tavsif  : PHP va MySQL asosida yengil CMS, Sitejet API bilan
+               integratsiya, forma bilan ishlash va image proxy
+     Stack   : PHP, MySQL, Sitejet API
+     Holat   : Open Source
+
+  6. LINUX MONITORING BOT
+     Tavsif  : CPU, RAM, disk va tarmoq statistikasini Telegram orqali
+               real-time hisobot qiluvchi server monitoring bot
+     Stack   : Bash, Linux, Telegram Bot API
+     Holat   : Ishlaydi
+
+SERTIFIKATLAR VA YUTUQLAR
+--------------------------------------------------------------------------------
+  - Doimiy yuqori GPA (oxirgi o'quv yilida 4.77)
+  - GitHub'da faol open-source ishtirokchi
+  - Telegram dev blog'da muntazam texnik muallif
+  - Barcha semestrlar bo'yicha akademik qarz yo'q
+
+QIZIQISHLAR
+--------------------------------------------------------------------------------
+  - Open-source'ga hissa qo'shish
+  - Mahalliy LLM bilan tajribalar
+  - Developer vositalari
+  - Avtomatlashtirish va skripting
+  - Cloud-native arxitektura
+  - Texnik yozuv va bilim almashish
+
+MAVJUDLIK
+--------------------------------------------------------------------------------
+  Holat           : Ish uchun ochiq
+  Ish formati     : Remote-friendly
+  Istalgan rollar : Backend dasturchi, AI muhandisi, DevOps muhandisi,
+                    Avtomatlashtirish mutaxassisi
+  Joylashuv       : O'zbekiston (Remote worldwide)
+
+TAVSIYALAR
+--------------------------------------------------------------------------------
+  So'rov bo'yicha taqdim etiladi.
+
+================================================================================
+  Oxirgi yangilanish: Oktyabr 2026
+  Ushbu rezyume tasdiqlangan akademik va kasbiy ma'lumotlar asosida
+  tuzilgan.
+================================================================================

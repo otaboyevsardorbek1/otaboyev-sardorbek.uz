@@ -113,6 +113,202 @@ document.addEventListener('DOMContentLoaded', function () {
   const avatarImg = document.getElementById('github-avatar');
   const avatarShell = document.getElementById('profile-avatar-shell');
 
+  const profileCacheKey = 'portfolio-profile-cache';
+  const profileCacheTTL = 1000 * 60 * 60 * 6;
+  const defaultProfile = {
+    name: 'Otaboyev Sardorbek',
+    role: 'Backend Developer | AI & Automation Specialist',
+    email: 'otaboyevsardorbek1@gmail.com',
+    phone: '+998918610470',
+    github: 'https://github.com/otaboyevsardorbek1',
+    telegram: 'https://t.me/prodevuzoff',
+    telegramHandle: '@prodevuzoff',
+    location: 'Uzbekistan',
+    status: 'Open to Work',
+    summary: 'A self-driven Backend Developer & Tool Maker from Uzbekistan — building bots, APIs, and developer tools.'
+  };
+
+  const safeStorage = {
+    getItem: function (key) {
+      try {
+        return window.localStorage ? window.localStorage.getItem(key) : null;
+      } catch (error) {
+        return null;
+      }
+    },
+    setItem: function (key, value) {
+      try {
+        if (window.localStorage) {
+          window.localStorage.setItem(key, value);
+        }
+      } catch (error) {
+        // Ignore storage errors in restricted browser contexts.
+      }
+    }
+  };
+
+  const parseProfileFromReadme = function (content) {
+    const text = String(content || '').replace(/\r/g, '');
+
+    const cleanValue = function (value) {
+      return decodeURIComponent(String(value || '')
+        .replace(/%20/g, ' ')
+        .replace(/https?:\/\/[^\s]+/g, '')
+        .replace(/\[[^\]]*\]/g, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\?style=.*$/gi, '')
+        .replace(/-green.*$/gi, '')
+        .replace(/-orange.*$/gi, '')
+        .replace(/-blue.*$/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim());
+    };
+
+    const getMatch = function (pattern, fallback) {
+      const match = text.match(pattern);
+      if (!match || !match[1]) return fallback;
+      return cleanValue(match[1]);
+    };
+
+    const name = getMatch(/#\s+Hi\s+.*?I\'m\s+([^\n]+)/i, defaultProfile.name)
+      || getMatch(/^([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)+)\s*$/m, defaultProfile.name);
+
+    const role = getMatch(/Backend\s+Developer[^\n]*/i, defaultProfile.role)
+      || defaultProfile.role;
+
+    const summary = getMatch(/A self-driven[^\n]*/i, defaultProfile.summary)
+      || defaultProfile.summary;
+
+    const email = getMatch(/(?:Email|E-mail)\s*[:\-]\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i, defaultProfile.email);
+    const phone = cleanValue(getMatch(/(?:Phone|Contact|Mobile|Tel)\s*[:\-]\s*(\+?[0-9\s()+-]{7,})/i, defaultProfile.phone)).replace(/\s*[-–—]+\s*$/, '');
+    const github = getMatch(/https?:\/\/github\.com\/([A-Za-z0-9_.-]+)/i, 'https://github.com/otaboyevsardorbek1');
+    const telegramLink = getMatch(/https?:\/\/t\.me\/([A-Za-z0-9_]+)/i, 'https://t.me/prodevuzoff');
+    const telegramHandle = telegramLink.includes('://') ? telegramLink.replace('https://t.me/', '@') : `@${telegramLink}`;
+
+    const location = cleanValue(getMatch(/Location\s*[-:]\s*([^\n]+)/i, defaultProfile.location))
+      || cleanValue(getMatch(/Location-([A-Za-z\s]+?)(?:-green|\?|$)/i, defaultProfile.location));
+
+    const status = cleanValue(getMatch(/Status\s*[-:]\s*([^\n]+)/i, defaultProfile.status))
+      || cleanValue(getMatch(/Status-([A-Za-z%20\s]+?)(?:-orange|\?|$)/i, defaultProfile.status));
+
+    return {
+      name: name || defaultProfile.name,
+      role: role || defaultProfile.role,
+      email: email || defaultProfile.email,
+      phone: phone || defaultProfile.phone,
+      github: github.startsWith('http') ? github : `https://github.com/${github}`,
+      telegram: telegramLink.startsWith('http') ? telegramLink : `https://t.me/${telegramLink}`,
+      telegramHandle: telegramHandle || defaultProfile.telegramHandle,
+      location: location || defaultProfile.location,
+      status: status || defaultProfile.status,
+      summary: summary || defaultProfile.summary
+    };
+  };
+
+  const isValidProfile = function (profile) {
+    if (!profile || !profile.email || !String(profile.email).includes('@')) {
+      return false;
+    }
+
+    return !/style=|green\?|orange\?|blue\?/i.test(String(profile.location || ''))
+      && !/style=|green\?|orange\?|blue\?/i.test(String(profile.status || ''));
+  };
+
+  const applyProfileData = function (profile) {
+    const resolvedProfile = Object.assign({}, defaultProfile, profile || {});
+    window.__portfolioProfile = resolvedProfile;
+
+    const emailLink = document.getElementById('profile-email-link');
+    const githubLink = document.getElementById('profile-github-link');
+    const telegramLink = document.getElementById('profile-telegram-link');
+    const quickProfile = document.getElementById('profile-quick-text');
+    const profileName = document.getElementById('profile-name');
+    const profileRole = document.getElementById('profile-role');
+
+    if (emailLink) {
+      emailLink.href = `mailto:${resolvedProfile.email}`;
+      emailLink.innerHTML = `<strong>Email:</strong> ${resolvedProfile.email}`;
+    }
+
+    if (githubLink) {
+      githubLink.href = resolvedProfile.github;
+      githubLink.innerHTML = `<strong>GitHub:</strong> ${resolvedProfile.github.replace('https://', '')}`;
+    }
+
+    if (telegramLink) {
+      telegramLink.href = resolvedProfile.telegram;
+      telegramLink.innerHTML = `<strong>Telegram:</strong> ${resolvedProfile.telegramHandle}`;
+    }
+
+    if (quickProfile) {
+      quickProfile.textContent = `${resolvedProfile.location} · Remote-friendly · ${resolvedProfile.status} · Backend-first engineer with product focus.`;
+    }
+
+    if (profileName) {
+      profileName.textContent = resolvedProfile.name;
+    }
+
+    if (profileRole) {
+      profileRole.textContent = resolvedProfile.role;
+    }
+
+    const formFallbackEmail = resolvedProfile.email || defaultProfile.email;
+    const mailtoTargets = document.querySelectorAll('[data-profile-email]');
+    mailtoTargets.forEach(function (node) {
+      node.href = `mailto:${formFallbackEmail}`;
+    });
+  };
+
+  const loadProfileData = function () {
+    const cachedRaw = safeStorage.getItem(profileCacheKey);
+    let cachedProfile = null;
+
+    if (cachedRaw) {
+      try {
+        const parsed = JSON.parse(cachedRaw);
+        if (parsed && parsed.timestamp && (Date.now() - parsed.timestamp) < profileCacheTTL && isValidProfile(parsed.profile)) {
+          cachedProfile = parsed.profile || null;
+        } else {
+          safeStorage.setItem(profileCacheKey, JSON.stringify({
+            timestamp: 0,
+            profile: defaultProfile
+          }));
+        }
+      } catch (error) {
+        cachedProfile = null;
+      }
+    }
+
+    if (cachedProfile) {
+      applyProfileData(cachedProfile);
+    }
+
+    fetch('https://raw.githubusercontent.com/otaboyevsardorbek1/otaboyevsardorbek1/main/README.md', {
+      headers: {
+        Accept: 'text/plain'
+      }
+    })
+      .then(function (response) {
+        if (!response.ok) throw new Error('README fetch failed');
+        return response.text();
+      })
+      .then(function (content) {
+        const profile = parseProfileFromReadme(content);
+        safeStorage.setItem(profileCacheKey, JSON.stringify({
+          timestamp: Date.now(),
+          profile: profile
+        }));
+        applyProfileData(profile);
+      })
+      .catch(function () {
+        if (!cachedProfile) {
+          applyProfileData(defaultProfile);
+        }
+      });
+  };
+
+  loadProfileData();
+
   if (loginNode && reposNode && followersNode && followingNode) {
     const githubHeaders = {
       Accept: 'application/vnd.github+json',
