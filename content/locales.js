@@ -136,6 +136,8 @@ export const content = {
       submit: 'Xabar yuborish',
       sending: 'Yuborilmoqda...',
       success: 'Xabar muvaffaqiyatli yuborildi.',
+      validationFailed: "Ma'lumotlarni tekshiring (ism, email, mavzu va xabar).",
+      rateLimited: "Juda ko'p xabar yuborildi. 10 daqiqadan keyin qayta urinib ko'ring.",
       fallback:
         "Backend bilan aloqa yo'q; email ilovasi tayyor xabar bilan ochilmoqda.",
       cvPdf: 'CV yuklab olish (PDF)',
@@ -283,6 +285,8 @@ export const content = {
       submit: 'Send message',
       sending: 'Sending...',
       success: 'Message sent successfully.',
+      validationFailed: 'Please check the name, email, subject and message fields.',
+      rateLimited: 'Too many messages. Please try again in 10 minutes.',
       fallback:
         'Connection to the backend is unavailable; your email app is opening with a prepared message.',
       cvPdf: 'Download CV (PDF)',
@@ -429,6 +433,8 @@ export const content = {
       submit: 'Отправить сообщение',
       sending: 'Отправка...',
       success: 'Сообщение успешно отправлено.',
+      validationFailed: 'Проверьте имя, email, тему и сообщение.',
+      rateLimited: 'Слишком много сообщений. Повторите попытку через 10 минут.',
       fallback:
         'Связь с backend недоступна; открывается почтовое приложение с готовым сообщением.',
       cvPdf: 'Скачать CV (PDF)',

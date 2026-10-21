@@ -199,7 +199,22 @@ function ProjectEditor({ project, onCancel, onSaved }) {
 export default function ProjectManager({ projects, onRefresh, notify }) {
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(0);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
+
+  async function syncSitemap() {
+    if (syncing) return;
+    setSyncing(true);
+    setError('');
+    try {
+      const result = await adminApi('/sitemap', { method: 'POST' });
+      notify(`Sitemap yangilandi: ${result.urls} URL.`);
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function remove(project) {
     if (deleting) return;
@@ -239,7 +254,12 @@ export default function ProjectManager({ projects, onRefresh, notify }) {
           <h2>Loyihalar</h2>
           <p>{projects.length} ta loyiha. O‘zgarishlar saytda API orqali ko‘rinadi.</p>
         </div>
-        <button className="admin-btn admin-btn-primary" type="button" onClick={() => setEditing('new')}>+ Yangi loyiha</button>
+        <div className="admin-row-actions">
+          <button className="admin-btn admin-btn-ghost" type="button" onClick={syncSitemap} disabled={syncing}>
+            {syncing ? 'Yangilanmoqda...' : 'Sitemapni yangilash'}
+          </button>
+          <button className="admin-btn admin-btn-primary" type="button" onClick={() => setEditing('new')}>+ Yangi loyiha</button>
+        </div>
       </div>
 
       {error && <div className="admin-alert admin-alert-error">{error}</div>}

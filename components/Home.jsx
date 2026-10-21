@@ -312,14 +312,26 @@ export default function Home({ locale, copy }) {
     })
       .then(async (response) => {
         const text = await response.text();
-        if (!response.ok) throw new Error(text || 'Request failed');
+        if (!response.ok) {
+          const failure = new Error(text || 'Request failed');
+          failure.status = response.status;
+          throw failure;
+        }
         return text;
       })
       .then(() => {
         setStatus({ type: 'success', message: copy.contact.success });
         form.reset();
       })
-      .catch(() => {
+      .catch((failure) => {
+        if (failure && failure.status === 422) {
+          setStatus({ type: 'error', message: copy.contact.validationFailed });
+          return;
+        }
+        if (failure && failure.status === 429) {
+          setStatus({ type: 'error', message: copy.contact.rateLimited });
+          return;
+        }
         const values = new FormData(form);
         const name = String(values.get('form_contact[ed-f-1]') || '').trim() || 'There';
         const email = String(values.get('form_contact[ed-f-2]') || '').trim() || 'contact@otaboyev-sardorbek.uz';
@@ -606,6 +618,15 @@ export default function Home({ locale, copy }) {
                   onSubmit={handleSubmit}
                 >
                   <input type="hidden" name="id" value="contact" />
+                  <input type="hidden" name="lang" value={locale} />
+                  <input
+                    className="contact-honeypot"
+                    type="text"
+                    name="website"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    aria-hidden="true"
+                  />
                   <div className="form-row">
                     <label>
                       {copy.contact.name}

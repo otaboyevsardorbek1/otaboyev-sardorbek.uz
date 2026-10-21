@@ -394,6 +394,19 @@ button {
   color: var(--admin-primary-2);
 }
 
+.admin-nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: var(--admin-primary);
+  color: #06101d;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 800;
+  text-align: center;
+}
+
 .admin-sidebar-footer {
   display: grid;
   gap: 14px;
@@ -630,6 +643,155 @@ button {
   white-space: nowrap;
 }
 
+.admin-inbox-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.admin-message-table {
+  min-width: 620px;
+}
+
+.admin-message-table tbody tr {
+  cursor: pointer;
+}
+
+.admin-message-table tbody tr.unread td {
+  background: rgba(90, 169, 255, 0.04);
+}
+
+.admin-message-table tbody tr.selected td {
+  background: rgba(78, 242, 216, 0.07);
+}
+
+.admin-message-table td:first-child {
+  width: 30px;
+}
+
+.admin-message-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--admin-muted);
+}
+
+.admin-message-dot.unread {
+  background: var(--admin-primary-2);
+  box-shadow: 0 0 0 4px rgba(78, 242, 216, 0.1);
+}
+
+.admin-message-detail,
+.admin-message-placeholder {
+  border: 1px solid var(--admin-line);
+  border-radius: 13px;
+  background: rgba(8, 17, 31, 0.72);
+  padding: 18px;
+}
+
+.admin-message-detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--admin-line);
+  padding-bottom: 14px;
+}
+
+.admin-message-detail-head h3 {
+  margin: 5px 0;
+  font-size: 1.08rem;
+}
+
+.admin-message-detail-head p,
+.admin-message-detail-head small {
+  margin: 0;
+  color: var(--admin-muted);
+  font-size: 0.8rem;
+}
+
+.admin-message-body {
+  margin: 16px 0;
+  color: var(--admin-soft);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-message-body p {
+  margin: 0;
+}
+
+.admin-muted-text {
+  color: var(--admin-muted);
+}
+
+.admin-message-fields {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  border-top: 1px solid var(--admin-line);
+  padding-top: 14px;
+}
+
+.admin-message-fields div {
+  display: grid;
+  gap: 2px;
+}
+
+.admin-message-fields dt {
+  color: var(--admin-muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.admin-message-fields dd {
+  margin: 0;
+  color: var(--admin-text);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.admin-message-attachments {
+  margin-top: 14px;
+  border-top: 1px solid var(--admin-line);
+  padding-top: 12px;
+  font-size: 0.8rem;
+}
+
+.admin-message-attachments ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.admin-message-attachments li span {
+  color: var(--admin-muted);
+}
+
+.admin-message-actions {
+  gap: 8px;
+}
+
+.admin-message-placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  color: var(--admin-muted);
+  text-align: center;
+}
+
+.admin-message-placeholder span {
+  font-size: 1.8rem;
+  color: var(--admin-primary-2);
+}
+
+.admin-message-placeholder p {
+  margin: 8px 0 0;
+  font-size: 0.84rem;
+}
+
 .admin-state.on {
   border-color: rgba(78, 242, 216, 0.34);
   color: #b8fff2;
@@ -689,6 +851,10 @@ button {
 
   .admin-main {
     width: 100%;
+  }
+
+  .admin-inbox-layout {
+    grid-template-columns: 1fr;
   }
 }
 

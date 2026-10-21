@@ -9,10 +9,10 @@ Loyiha tuzilishi:
 - `content/locales.js` — uz/en/ru matnlari, project detail fallback va SEO label’lari
 - `css/portfolio.css` — umumiy dizayn; `js/portfolio.js` — faqat legacy sahifalar uchun JS
 - `{uz,ru,en}/projects/*` — tarixiy legacy detail nusxalari; `out/` ga ko‘chirilmaydi, sayt React route’larini ishlatadi
-- `backend/` — DB config, content API (`profile`, `projects`), admin auth (`admin.php`) va email (`mailer.php`)
-- `app/admin/`, `components/admin/`, `css/admin.css` — Telegram + email OTP bilan himoyalangan admin panel
-- `database/` — MySQL `schema.sql` va `seed.sql`
-- `api.php` — PHP API: form, tokenli endpoint, content route’lar, Sitejet proxy
+- `backend/` — DB config, content API (`profile`, `projects`), contact inbox (`contact.php`), admin auth (`admin.php`) va email (`mailer.php`)
+- `app/admin/`, `components/admin/`, `css/admin.css` — Telegram + email OTP bilan himoyalangan admin panel; inbox, loyihalar, adminlar
+- `database/` — MySQL `schema.sql`, `seed.sql` va migratsiyalar
+- `api.php` — PHP API: native contact form, tokenli endpoint, content route’lar, Sitejet proxy
 - `scripts/copy-static.mjs` — `next build`dan keyin `out/` ni to‘ldiradi
 - `.htaccess` — Apache routing, cache va xavfsizlik qoidalari
 
@@ -20,9 +20,11 @@ Loyiha tuzilishi:
 - Ko‘p tilli portfolio sahifalari
 - Loyiha detail sahifalari
 - GitHub profil ma’lumotlarini yuklash
-- Contact form va fallback email ishlashi
+- Contact form, MySQL inbox, honeypot/rate limit va fallback email ishlashi
 - Telegram Login Widget + email OTP asosidagi 2 bosqichli admin panel
 - Profil va loyihalarni uch tilda tahrirlash (CRUD), audit log va CSRF himoyasi
+- Inbox (read/unread/delete), adminlar boshqaruvi va avtomatik `sitemap.xml`
+- Haqiqiy 404 sahifa va Apache/Nginx routing
 - Responsive premium dark glassmorphism dizayn
 - Lokalizatsiya va sahifalar orasidagi navigatsiya
 - SEO va static sahifa qulayligi
@@ -49,6 +51,8 @@ mysql -u USER -p DB_NAME < database/schema.sql
 mysql -u USER -p DB_NAME < database/seed.sql
 # Eski (project sections qo‘shilishidan oldingi) baza uchun avval:
 # mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
+# Contact inbox jadvali uchun (idempotent):
+# mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
 # seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
 # u mavjud admin tahrirlarini bosib ketadi.
 ```
@@ -93,7 +97,7 @@ Admin panel `/admin/` da. Kirish ikki bosqichli:
 1. Telegram Login Widget admin Telegram akkauntini tasdiqlaydi.
 2. Admin emailiga 6 xonali kod yuboriladi; kod 10 daqiqa amal qiladi va 5 urinishdan keyin bekor qilinadi.
 
-Panelda profil (ism, email, GitHub, Telegram, avatar va uch tildagi role/bio/quick_text/location) hamda loyihalar (slug, kategoriya, havolalar, tartib, faollik va uch tildagi tag/title/summary/description/tech/results/stack_notes) tahrirlanadi. `results` va `stack_notes` har bir qatorda bitta element sifatida kiritiladi. O‘zgarishlar `profiles`, `profile_translations`, `projects`, `project_translations` jadvallariga yoziladi va detail sahifada API fetch’dan keyin ko‘rinadi.
+Panelda profil (ism, email, GitHub, Telegram, avatar va uch tildagi role/bio/quick_text/location), loyihalar (slug, kategoriya, havolalar, tartib, faollik va uch tildagi tag/title/summary/description/tech/results/stack_notes), kelgan xabarlar va qo‘shimcha adminlar boshqariladi. `results` va `stack_notes` har bir qatorda bitta element sifatida kiritiladi. O‘zgarishlar `profiles`, `profile_translations`, `projects`, `project_translations`, `contact_messages` va `admin_users` jadvallariga yoziladi; loyiha o‘zgarishi `sitemap.xml` ni avtomatik yangilaydi va detail sahifada API fetch’dan keyin ko‘rinadi.
 
 ### 1. BotFather
 
@@ -160,11 +164,13 @@ mysql -u USER -p DB_NAME < database/schema.sql
 mysql -u USER -p DB_NAME < database/seed.sql
 # Eski (project sections qo‘shilishidan oldingi) baza uchun avval:
 # mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
+# Contact inbox jadvali uchun (idempotent):
+# mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
 # seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
 # u mavjud admin tahrirlarini bosib ketadi.
 ```
 
-So‘ng `/admin/` ni oching. Birinchi muvaffaqiyatli Telegram callback `ADMIN_TELEGRAM_ID` asosida `admin_users` yozuvini yaratadi. Keyingi adminlarni xohlasangiz, `admin_users` jadvaliga qo‘lda qo‘shish mumkin; ular ham faol bo‘lsa kira oladi.
+So‘ng `/admin/` ni oching. Birinchi muvaffaqiyatli Telegram callback `ADMIN_TELEGRAM_ID` asosida `admin_users` yozuvini yaratadi. Keyingi adminlarni `/admin/dashboard/` → **Adminlar** bo‘limidan qo‘shish/tahrirlash/o‘chirish mumkin; Telegram ID va OTP email to‘g‘ri bo‘lsa ular ham kira oladi. O‘z hisobingizni o‘chirish/deaktiv qilish va oxirgi faol adminni olib tashlash bloklangan.
 
 ### Admin API
 
@@ -178,10 +184,15 @@ So‘ng `/admin/` ni oching. Birinchi muvaffaqiyatli Telegram callback `ADMIN_TE
 | `GET /api.php/admin/session` | session + CSRF token |
 | `POST /api.php/admin/logout` | sessionni yopish |
 | `GET/PUT /api.php/admin/profile` | profil o‘qish/saqlash |
-| `GET/POST /api.php/admin/projects` | ro‘yxat / yangi loyiha |
+| `GET/POST /api.php/admin/projects` | ro‘yxat / yangi loyiha; saqlashda sitemap avtomatik yangilanadi |
 | `GET/PUT/DELETE /api.php/admin/projects/{id}` | bitta loyiha |
+| `GET /api.php/admin/messages[?count=1\|unread=1]` | inbox count/ro‘yxat |
+| `GET/PUT/DELETE /api.php/admin/messages/{id}` | xabar / read-unread / o‘chirish |
+| `POST /api.php/admin/sitemap` | `sitemap.xml` ni qayta generatsiya qilish |
+| `GET/POST /api.php/admin/admins` | adminlar ro‘yxati / yangi admin |
+| `GET/PUT/DELETE /api.php/admin/admins/{id}` | adminni o‘qish/tahrirlash/o‘chirish |
 
-`POST`, `PUT`, `DELETE` so‘rovlarida `X-CSRF-Token` header majburiy. Admin endpointlar CORS header qaytarmaydi; ular faqat same-origin uchun.
+`POST`, `PUT`, `DELETE` so‘rovlarida `X-CSRF-Token` header majburiy. Admin endpointlar CORS header qaytarmaydi; ular faqat same-origin uchun. Sitemap fayli web rootda PHP yoza oladigan bo‘lishi kerak; aks holda `500 sitemap_write_failed` qaytadi.
 
 ### Xavfsizlik
 
@@ -234,8 +245,19 @@ server {
     root /var/www/otaboyev-sardorbek.uz;
     index index.html index.php;
 
+    error_page 404 /404.html;
+
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files $uri $uri/ =404;
+    }
+
+    # Admin yaratgan, statik papkasi yo‘q project slug’lari
+    location ~ ^/(uz|en|ru)/projects/([a-z0-9-]+)/$ {
+        try_files $uri $uri/ @project_view;
+    }
+
+    location @project_view {
+        rewrite ^/(uz|en|ru)/projects/([a-z0-9-]+)/$ /$1/projects/view/?slug=$2 last;
     }
 
     location ~ \.php$ {
@@ -280,11 +302,11 @@ npm run build
 ### cPanel deploy
 
 1. cPanel → **MySQL Databases**: baza va foydalanuvchi yarating, foydalanuvchiga bazaga ruxsat bering.
-2. phpMyAdmin → **Import**: yangi baza uchun `database/schema.sql`, keyin `database/seed.sql`; eski bazada avval `database/migrate-project-sections.sql` ni import qiling. `seed.sql` mavjud admin tahrirlarini bosib ketadi.
+2. phpMyAdmin → **Import**: yangi baza uchun `database/schema.sql`, keyin `database/seed.sql`; eski bazada avval `database/migrate-project-sections.sql`, keyin `database/migrate-contact-messages.sql` ni import qiling. `seed.sql` mavjud admin tahrirlarini bosib ketadi.
 3. `config.local.example.php` dan `config.local.php` yarating; DB, Telegram, email va `app_secret` ni to‘ldiring.
 4. Lokalda yoki Node mavjud muhitda `npm ci && npm run build`.
 5. `out/` ichidagi barcha fayllarni cPanel **File Manager** orqali `public_html/` ga yuklang. `out/` papkasining o‘zini emas, ichidagi `api.php`, `backend/`, `.htaccess`, `index.html`, `admin/`, `uz/`, `en/`, `ru/`, `_next/`, `files/` ni yuklang.
-6. `config.local.php` ni web rootga qo‘ying va ruxsatini `600` qiling.
+6. `config.local.php` ni web rootga qo‘ying va ruxsatini `600` qiling. Web rootdagi `sitemap.xml` PHP jarayoni yoza olishi kerak (fayl egasi web user bo‘lsin; papka yozish huquqini saqlang), aks holda admin panelida sitemap yangilash `500` qaytaradi.
 7. cPanel → **SSL/TLS Status**: AutoSSL faol bo‘lsin; HTTPS majburiy bo‘lsin.
 8. `https://otaboyev-sardorbek.uz/admin/` ni ochib, Telegram va email kod bilan tekshiring.
 
@@ -325,8 +347,11 @@ sudo find /var/www/otaboyev-sardorbek.uz -type f -exec chmod 644 {} \;
 | `/api.php/profile?lang=uz` | profil ma’lumotlari: name, role, bio, quick_text, location, email, GitHub, Telegram |
 | `/api.php/projects?lang=uz` | loyiha kartalari: slug, category, tag, title, summary, tech, links |
 | `/api.php/projects/{slug}?lang=uz` | loyiha tafsiloti: `description`, `results[]`, `stack_notes[]` |
+| `POST /api.php/form_container/submit` | `id=contact` native contact form; boshqa ID’lar Sitejet contracti |
 | `/api.php/health` | `{"status":"ok"}` |
 | `/api.php/websites` | tokenli endpoint |
+
+Contact form `id=contact` bilan `form_contact[ed-f-1..4]` (ism, email, mavzu, xabar), `lang` va bo‘sh `website` honeypot yuboradi. Xabar `contact_messages` jadvaliga yoziladi; IP bo‘yicha 10 daqiqada 5 tadan ko‘p yuborilsa `429`, DB yo‘q bo‘lsa `503` qaytadi (frontend `mailto` fallback’ga o‘tadi). Admin panelda **Xabarlar** bo‘limidan o‘qish, read/unread va o‘chirish mumkin.
 
 Javob formati:
 
@@ -375,9 +400,9 @@ Loyihada root `.htaccess` fayli mavjud bo‘lib, quyidagilarni boshqaradi:
 - locale redirect`lar`
 - project detail/listing papkalari uchun `DirectoryIndex`; statik sahifasi yo‘q admin slug’lari uchun `/projects/view/?slug=...` fallback rewrite’i (per-slug statik rewrite qo‘shilmaydi, loop bo‘lmaydi)
 - cache headerlar
-- HTML fallback
+- `ErrorDocument 404 /404.html` orqali haqiqiy 404
 - xavfsizlik headerlari (CSP, HSTS, nosniff, frame-ancestors)
-- `/api.php/...` PATH_INFO route’larini catch-all’dan himoyalash
+- `/api.php/...` PATH_INFO route’larini himoyalash
 
 Bu Apache hosting uchun mo‘ljallangan.
 
@@ -412,6 +437,11 @@ Route to‘g‘ri ekanligiga ishonch hosil qiling:
 - `/en/projects/gitinsight/`
 
 Shuningdek, `.htaccess` yoqilgan va Apache `mod_rewrite` faol bo‘lishi kerak. Project detail papkasida `index.html` borligini tekshiring; per-slug rewrite qo‘shmang, aks holda Apache internal redirect loop beradi.
+
+### Contact form 503/429 qaytarsa
+- `503`: DB yoki `contact_messages` jadvali yo‘q. `config.local.php` ni va `database/migrate-contact-messages.sql` importini tekshiring; frontend bu holatda `mailto` fallback’ga o‘tadi.
+- `429`: bitta IP’dan 10 daqiqada 5 tadan ko‘p xabar yuborilgan; birozdan keyin qayta urinib ko‘ring.
+- Xabar DB’ga tushsa, `/admin/dashboard/` → **Xabarlar** bo‘limida ko‘rinadi. Honeypot (`website`) to‘ldirilgan bo‘lsa so‘rov rad etiladi.
 
 ### CSS/JS yuklanmay qolsa
 Asset yo‘llari sahifa chuqurligiga mos bo‘lishi kerak. Loyiha umumiy assetlar:
@@ -448,6 +478,8 @@ mysql -u USER -p DB_NAME < database/schema.sql
 mysql -u USER -p DB_NAME < database/seed.sql
 # Eski (project sections qo‘shilishidan oldingi) baza uchun avval:
 # mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
+# Contact inbox jadvali uchun (idempotent):
+# mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
 # seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
 # u mavjud admin tahrirlarini bosib ketadi.
 ```

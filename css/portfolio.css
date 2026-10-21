@@ -838,6 +838,15 @@ img { max-width: 100%; display: block; }
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 16px 36px rgba(5, 12, 22, 0.3);
 }
 
+.contact-honeypot {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
 .form-row {
   display: grid;
   gap: 12px;

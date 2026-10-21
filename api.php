@@ -6,6 +6,8 @@ if (getenv('APP_ENV') !== 'local') {
     ini_set('display_errors', '0');
 }
 
+require_once __DIR__ . '/backend/contact.php';
+
 // Parse the URL part to be proxied
 $url = str_replace('/' . basename(__FILE__), '', $_SERVER['REQUEST_URI']);
 $requestMethod = $_SERVER["REQUEST_METHOD"]; // get the request method
@@ -407,6 +409,10 @@ function handleFormSubmission()
         $formFieldsConfig = $formConfig['children'];
         list($data, $attachments) = getFormData($formId, $formFieldsConfig);
 
+        // Persist the message for the admin inbox. A missing DB or table must
+        // never break the existing form/email flow.
+        contact_store_message($formConfig, $formId, $data, $attachments);
+
         if (!empty($formConfig['form']['webhookUrl'])) {
             pushWebhook($formConfig, $data, $attachments);
         }
@@ -504,6 +510,20 @@ function curl($url)
     return $return;
 }
 
+function handleFormRequest()
+{
+    $formId = isset($_POST['id']) ? trim((string) $_POST['id']) : '';
+    if ($formId === 'contact') {
+        $payload = isset($_POST['form_contact']) && is_array($_POST['form_contact'])
+            ? $_POST['form_contact']
+            : array();
+        $native = contact_native_submit($payload);
+        return array($native[1], array('http_code' => $native[2]));
+    }
+
+    return handleFormSubmission();
+}
+
 $requestPath = getApiRequestPath();
 
 if (strpos($requestPath, '/admin') !== 0) {
@@ -513,7 +533,7 @@ if (strpos($requestPath, '/admin') !== 0) {
 }
 
 if ($requestPath === '/form_container/submit' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $result = handleFormSubmission();
+    $result = handleFormRequest();
     $body = $result[0] ?? 'Processing...';
     $code = (int) ($result[1]['http_code'] ?? 200);
 
@@ -576,7 +596,7 @@ if (preg_match('#^/websites/?$#', $requestPath)) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && strpos($requestPath, '/form_container/submit') !== false) {
-    list($response, $headers) = handleFormSubmission();
+    list($response, $headers) = handleFormRequest();
 } else {
     list($response, $headers) = forwardToApi($requestPath, $_SERVER['REQUEST_METHOD']);
     $contentType = $headers['content_type'] ?? 'text/plain';

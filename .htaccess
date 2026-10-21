@@ -1,6 +1,7 @@
 Options -Indexes
 DirectoryIndex index.html
 AcceptPathInfo On
+ErrorDocument 404 /404.html
 
 RewriteEngine On
 
@@ -66,10 +67,3 @@ RewriteRule ^(backend|database)/ - [F,L]
 
 # Do not allow access to hidden/system files
 RedirectMatch 403 ^/(?!\.well-known/)\..*
-
-# If the requested file or folder doesn't exist, try to serve the root index.html for SPA-like fallback.
-# Never rewrite api.php PATH_INFO routes (for example /api.php/admin/session).
-RewriteCond %{REQUEST_URI} !^/api\.php(/|$)
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule . /index.html [L]

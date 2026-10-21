@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { adminApi, errorMessage, setCsrfToken } from './api';
 import ProfileEditor from './ProfileEditor';
 import ProjectManager from './ProjectManager';
+import MessageInbox from './MessageInbox';
+import AdminManager from './AdminManager';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -12,6 +14,7 @@ export default function AdminDashboard() {
   const [admin, setAdmin] = useState(null);
   const [profile, setProfile] = useState(null);
   const [projects, setProjects] = useState([]);
+  const [unread, setUnread] = useState(0);
   const [tab, setTab] = useState('profile');
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
@@ -25,13 +28,15 @@ export default function AdminDashboard() {
         if (!active) return;
         setCsrfToken(session.csrf_token);
         setAdmin(session.admin);
-        const [profileData, projectData] = await Promise.all([
+        const [profileData, projectData, messageCount] = await Promise.all([
           adminApi('/profile'),
           adminApi('/projects'),
+          adminApi('/messages?count=1').catch(() => null),
         ]);
         if (!active) return;
         setProfile(profileData);
         setProjects(projectData || []);
+        setUnread(messageCount ? messageCount.unread || 0 : 0);
         setPhase('ready');
       } catch (failure) {
         if (!active) return;
@@ -107,6 +112,13 @@ export default function AdminDashboard() {
           <button className={tab === 'projects' ? 'active' : ''} type="button" onClick={() => setTab('projects')}>
             <span>02</span> Loyihalar
           </button>
+          <button className={tab === 'messages' ? 'active' : ''} type="button" onClick={() => setTab('messages')}>
+            <span>03</span> Xabarlar
+            {unread > 0 && <em className="admin-nav-badge">{unread}</em>}
+          </button>
+          <button className={tab === 'admins' ? 'active' : ''} type="button" onClick={() => setTab('admins')}>
+            <span>04</span> Adminlar
+          </button>
         </nav>
 
         <div className="admin-sidebar-footer">
@@ -124,7 +136,12 @@ export default function AdminDashboard() {
         <header className="admin-topbar">
           <div>
             <span className="admin-kicker">Content manager</span>
-            <h1>{tab === 'profile' ? 'Profil ma’lumotlari' : 'Loyihalar boshqaruvi'}</h1>
+            <h1>
+              {tab === 'profile' && 'Profil ma’lumotlari'}
+              {tab === 'projects' && 'Loyihalar boshqaruvi'}
+              {tab === 'messages' && 'Kelgan xabarlar'}
+              {tab === 'admins' && 'Adminlar boshqaruvi'}
+            </h1>
           </div>
           <span className="admin-session-pill">Session faol</span>
         </header>
@@ -147,6 +164,14 @@ export default function AdminDashboard() {
             onRefresh={refreshProjects}
             notify={setToast}
           />
+        )}
+
+        {tab === 'messages' && (
+          <MessageInbox notify={setToast} onUnreadChange={setUnread} />
+        )}
+
+        {tab === 'admins' && (
+          <AdminManager currentAdminId={admin.id} notify={setToast} />
         )}
       </main>
     </div>

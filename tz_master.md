@@ -41,12 +41,13 @@ The repository has one Next.js frontend layer, one PHP content/admin backend and
 
 ### Backend
 
-- `api.php` — request routing, contact form, token check, Sitejet proxy and content/admin includes.
+- `api.php` — request routing, native contact form, token check, Sitejet proxy and content/admin includes.
 - `backend/config.php` — DB, admin and mail settings from env or gitignored `config.local.php`.
+- `backend/contact.php` — contact validation, IP hash, rate limit, inbox persistence and native `id=contact` handler.
 - `backend/content.php` — public JSON content API.
-- `backend/admin.php` — Telegram + email OTP auth, sessions, CSRF, rate limits, audit log and profile/project CRUD.
+- `backend/admin.php` — Telegram + email OTP auth, sessions, CSRF, rate limits, audit log, profile/project CRUD, inbox, sitemap and admin-user management.
 - `backend/mailer.php` — `mail`, SMTP, Resend, Brevo and local `log` drivers.
-- `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`.
+- `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`.
 
 ### Legacy / Sitejet files
 
@@ -64,6 +65,7 @@ MySQL 5.7+ / MariaDB 10.2+, `utf8mb4`.
 | `profile_translations` | `role`, `bio`, `quick_text`, `location` per locale |
 | `projects` | slug, category, repo/demo URLs, sort order, active flag |
 | `project_translations` | tag, title, summary, description, tech, results, stack notes per locale |
+| `contact_messages` | contact inbox: form id, locale, sender, subject, message, JSON payload, hashed IP, read flag |
 | `admin_users` | bootstrap/active admins |
 | `admin_login_challenges` | hashed OTP challenge, attempts, expiry |
 | `admin_sessions` | hashed session tokens, expiry, last seen |
@@ -79,13 +81,14 @@ mysql -u USER -p DB_NAME < database/schema.sql
 mysql -u USER -p DB_NAME < database/seed.sql
 ```
 
-Existing database (before the project-sections migration):
+Existing database (before the project-sections and contact-inbox migrations):
 
 ```bash
 mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
+mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
 ```
 
-The migration adds `results` and `stack_notes`; it is a one-time, non-idempotent script. Re-import `database/seed.sql` **only** when resetting to the default content — it overwrites existing admin edits.
+`migrate-project-sections.sql` adds `results` and `stack_notes`; it is a one-time, non-idempotent script. `migrate-contact-messages.sql` uses `CREATE TABLE IF NOT EXISTS` and is safe to run again. Re-import `database/seed.sql` **only** when resetting to the default content — it overwrites existing admin edits.
 
 ## 4. API contract
 
@@ -106,7 +109,7 @@ Envelope:
 | GET | `/api.php/profile?lang=uz` | name, role, location, email, GitHub, Telegram, avatar, short bio |
 | GET | `/api.php/projects?lang=uz` | active project cards: slug, title, summary, tech, category, links |
 | GET | `/api.php/projects/{slug}?lang=uz` | full detail: description, results, stack notes |
-| POST | `/api.php/form_container/submit` | existing Sitejet form contract (`id`, `form_<id>[ed-f-N]`) |
+| POST | `/api.php/form_container/submit` | `id=contact`: native validation + `contact_messages` + 5/10 min IP limit; other IDs: Sitejet contract (`id`, `form_<id>[ed-f-N]`) |
 | GET | `/api.php/websites` | token-protected site list (`X-Api-Token` or `Authorization: Bearer`) |
 
 Other paths are proxied to `https://api.sitehub.io`; CDN image URLs are rewritten to `/api.php`/`https://inter-cdn.com` per the existing proxy rules.
@@ -127,8 +130,13 @@ Errors: `404 project_not_found`, `503 db_unavailable`, `405 method_not_allowed`,
 | GET/PUT | `/api.php/admin/profile` | profile + 3 translations |
 | GET/POST | `/api.php/admin/projects` | list all projects / create |
 | GET/PUT/DELETE | `/api.php/admin/projects/{id}` | read / update / delete |
+| GET | `/api.php/admin/messages[?count=1\|unread=1]` | inbox counts / list |
+| GET/PUT/DELETE | `/api.php/admin/messages/{id}` | read full message / mark read / delete |
+| POST | `/api.php/admin/sitemap` | regenerate `sitemap.xml` from active projects |
+| GET/POST | `/api.php/admin/admins` | list / create extra admins |
+| GET/PUT/DELETE | `/api.php/admin/admins/{id}` | read / update / delete; self and last-admin guards |
 
-`X-CSRF-Token` is required on mutations. Admin responses must not use wildcard CORS. The slug `view` is reserved for the fallback route.
+`X-CSRF-Token` is required on mutations. Admin responses must not use wildcard CORS. The slug `view` is reserved for the fallback route. Sitemap generation runs automatically after project mutations and fails soft there; the manual endpoint returns `500 sitemap_write_failed` if the web root is not writable.
 
 ## 5. Admin security
 
@@ -137,7 +145,7 @@ Errors: `404 project_not_found`, `503 db_unavailable`, `405 method_not_allowed`,
 - Cookies: `admin_session` HttpOnly, Secure on HTTPS, `SameSite=Strict`; `admin_challenge` HttpOnly, `SameSite=Lax`.
 - CSRF: HMAC token bound to the session; required on POST/PUT/DELETE.
 - Rate limits: challenge and start attempts per time window; auth events recorded.
-- Audit: profile/project mutations written to `admin_audit_log`.
+- Audit: profile/project, inbox read/delete, sitemap and admin-user mutations written to `admin_audit_log`.
 - Auth is disabled unless all required settings are valid: HTTPS production URL, mail driver, Telegram bot token/username, numeric admin ID, valid admin email and a 64-hex app secret.
 - Never expose bot token, app secret, OTP or real admin email in public JSON or logs.
 
@@ -146,7 +154,7 @@ Errors: `404 project_not_found`, `503 db_unavailable`, `405 method_not_allowed`,
 - Build artifact: `out/` published to the web root.
 - Runtime: PHP + MySQL only; no Passenger/Node runtime.
 - Primary server: Apache with `.htaccess` (`mod_rewrite`, `mod_headers`).
-- Nginx: `.htaccess` is ignored; equivalent `try_files`/rewrite is required for the generic detail fallback.
+- Nginx: `.htaccess` is ignored; equivalent `try_files`/rewrite is required for the generic detail fallback, plus `error_page 404 /404.html` for real 404s.
 - Build locally or on the server: `npm ci && npm run build`; copy `out/` to the web root.
 - DB config: gitignored `config.local.php` or `DB_*` environment variables.
 - Production requires HTTPS, a real DB, Telegram bot/ID, email credentials and `APP_SECRET`.
@@ -176,7 +184,9 @@ Verify:
 - Content API: profile/projects/detail for all locales, invalid `lang`, missing slug and `db_unavailable`.
 - Admin: config `enabled`; Telegram callback → challenge cookie → email code → session; wrong OTP, expired challenge/session, missing CSRF, CORS separation and logout.
 - Admin profile/project create→update→delete; confirm public API and 3-language validation.
-- Contact form request/response in the network tab.
+- Contact form request/response in the network tab; `contact_messages` row; inbox count/list/read/delete; honeypot and 429 limit.
+- Admin-user add/edit/delete with self/last-admin guards; sitemap button and automatic regeneration after project save/delete.
+- Apache: real 404 for `/de/`/`/nope`, generic detail fallback, denied backend/config paths.
 - CV links resolve; `.htaccess` rewrites tested on Apache.
 - `git diff --check` and a full diff review.
 
@@ -188,12 +198,12 @@ Order matters: correctness and production safety before optional features.
 |---|---|---|
 | 0 | Repo hygiene | Completed: migration and docs are committed and pushed to `origin/main`. Remove or ignore the empty `README` and `CodeAnalyzer_v2.py` only with owner approval |
 | 1 | Production readiness | cPanel DB, `config.local.php`, import schema/seed or migration, BotFather domain, email DNS/SPF/DKIM, HTTPS admin test |
-| 2 | Content operations | Decide contact inbox, extra admins; add a rebuild/publish hook so admin edits reach static HTML crawlers |
-| 3 | SEO and routing | Auto-generate `sitemap.xml` for new slugs; improve generic detail metadata/hreflang; decide real 404 vs SPA fallback |
-| 4 | Maintenance | Idempotent migration runner, legacy cleanup, remove unused legacy assets once safe |
-| — | Completed | CV downloads; 15-URL sitemap; canonical/hreflang; React home/listing; MySQL content API; Telegram + OTP admin; 9 detail pages migrated; Apache fallback for new slugs |
+| 2 | Content operations | Completed: contact inbox, native contact form and extra-admin UI. Remaining: add a rebuild/publish hook so admin edits reach static HTML crawlers |
+| 3 | SEO and routing | Completed: auto-generate `sitemap.xml` for new slugs and real 404. Remaining: improve generic detail metadata/hreflang |
+| 4 | Maintenance | Idempotent migration runner, media upload, legacy cleanup, remove unused legacy assets once safe |
+| — | Completed | CV downloads; 15-URL sitemap; canonical/hreflang; React home/listing; MySQL content API; Telegram + OTP admin; 9 detail pages migrated; Apache fallback for new slugs; contact inbox; sitemap generator; admin-user manager; native contact form; real 404 |
 
-Owner decisions are required for locale parity (`en/*`), contact inbox, extra admin UI and legacy cleanup.
+Owner decisions are required for locale parity (`en/*`), media upload and legacy cleanup.
 
 ## 9. Migration history
 
@@ -208,14 +218,17 @@ Owner decisions are required for locale parity (`en/*`), contact inbox, extra ad
 - Admin panel with Telegram HMAC + email OTP, secure sessions, CSRF, rate limits, audit log and 3-language CRUD.
 - 9 detail pages moved to React, with `results`/`stack_notes`, admin fields and seed/migration.
 - Apache fallback for admin-created slugs; tested without a rebuild and in headless Chromium.
+- Native contact form with honeypot and IP limit; `contact_messages` inbox with read/unread/delete.
+- Automatic sitemap regeneration and admin-user CRUD with self/last-admin protection.
+- Real `404.html` handling in Apache; SPA catch-all removed.
 
 **Remaining:**
 
 - Production credentials, Telegram BotFather domain and email DNS are not configured.
 - Static fallback requires a rebuild for crawlers to see admin-edited copy.
-- Admin-created slugs are not in `sitemap.xml` automatically.
 - Generic detail metadata/canonical is corrected only after JS runs.
-- Contact inbox, extra admin UI, media upload and legacy cleanup are not implemented.
+- Media upload, `en/*` locale parity and legacy cleanup are not implemented.
+- Email notification for contact messages is not wired yet; the admin inbox is the source of truth.
 
 ## 10. Hosting appendix (shared cPanel)
 

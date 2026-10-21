@@ -1101,6 +1101,7 @@ function admin_handle_projects($pdo)
         }
         $pdo->commit();
         admin_audit($pdo, $session['row']['admin_id'], 'project_created', 'project', $id, array('slug' => $project['slug']));
+        admin_try_write_sitemap($pdo);
         admin_respond(admin_project_data($pdo, $id), 201);
     } catch (PDOException $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -1135,6 +1136,7 @@ function admin_handle_project_item($pdo, $id)
         $statement = $pdo->prepare('DELETE FROM projects WHERE id = :id');
         $statement->execute(array(':id' => (int) $id));
         admin_audit($pdo, $session['row']['admin_id'], 'project_deleted', 'project', $id, array('slug' => $project['slug']));
+        admin_try_write_sitemap($pdo);
         admin_respond(array('deleted' => true, 'id' => (int) $id), 200);
     }
 
@@ -1187,6 +1189,7 @@ function admin_handle_project_item($pdo, $id)
         }
         $pdo->commit();
         admin_audit($pdo, $session['row']['admin_id'], 'project_updated', 'project', $id, array('slug' => $clean['slug']));
+        admin_try_write_sitemap($pdo);
         admin_respond(admin_project_data($pdo, $id), 200);
     } catch (PDOException $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -1199,6 +1202,360 @@ function admin_handle_project_item($pdo, $id)
         if ($pdo->inTransaction()) $pdo->rollBack();
         error_log('admin project update error: ' . $error->getMessage());
         admin_fail('Project could not be saved', 'save_failed', 500);
+    }
+}
+
+function admin_message_data($pdo, $id)
+{
+    $statement = $pdo->prepare(
+        'SELECT id, form_id, locale, name, email, subject, message, payload, is_read, created_at
+         FROM contact_messages WHERE id = :id LIMIT 1'
+    );
+    $statement->execute(array(':id' => (int) $id));
+    $row = $statement->fetch();
+    if (!$row) {
+        return null;
+    }
+
+    $row['id'] = (int) $row['id'];
+    $row['is_read'] = (int) $row['is_read'] === 1;
+    $decoded = json_decode((string) $row['payload'], true);
+    $row['payload'] = is_array($decoded) ? $decoded : array();
+    return $row;
+}
+
+function admin_handle_messages($pdo)
+{
+    admin_require_method('GET');
+    admin_require_session($pdo);
+
+    $unread = (int) $pdo->query('SELECT COUNT(*) FROM contact_messages WHERE is_read = 0')->fetchColumn();
+    $total = (int) $pdo->query('SELECT COUNT(*) FROM contact_messages')->fetchColumn();
+    if (isset($_GET['count']) && (string) $_GET['count'] === '1') {
+        admin_respond(array('unread' => $unread, 'total' => $total), 200);
+    }
+
+    $where = '';
+    if (isset($_GET['unread']) && (string) $_GET['unread'] === '1') {
+        $where = ' WHERE is_read = 0';
+    }
+    $statement = $pdo->query(
+        'SELECT id, form_id, locale, name, email, subject, is_read, created_at,
+                LEFT(message, 280) AS preview
+         FROM contact_messages' . $where . '
+         ORDER BY created_at DESC, id DESC
+         LIMIT 200'
+    );
+    $items = array();
+    foreach ($statement->fetchAll() as $row) {
+        $row['id'] = (int) $row['id'];
+        $row['is_read'] = (int) $row['is_read'] === 1;
+        $items[] = $row;
+    }
+
+    admin_respond(array('items' => $items, 'unread' => $unread, 'total' => $total), 200);
+}
+
+function admin_handle_message_item($pdo, $id)
+{
+    $method = admin_require_method(array('GET', 'PUT', 'DELETE'));
+    $session = admin_require_session($pdo);
+    $message = admin_message_data($pdo, $id);
+    if (!$message) {
+        admin_fail('Message not found', 'message_not_found', 404);
+    }
+
+    if ($method === 'GET') {
+        admin_respond($message, 200);
+    }
+
+    admin_require_csrf($session);
+
+    if ($method === 'DELETE') {
+        $statement = $pdo->prepare('DELETE FROM contact_messages WHERE id = :id');
+        $statement->execute(array(':id' => (int) $id));
+        admin_audit($pdo, $session['row']['admin_id'], 'message_deleted', 'contact_message', $id, null);
+        admin_respond(array('deleted' => true, 'id' => (int) $id), 200);
+    }
+
+    $input = admin_json_input();
+    if (!array_key_exists('is_read', $input)) {
+        admin_fail('is_read is required', 'validation_failed', 422);
+    }
+    $isRead = !empty($input['is_read']) && (string) $input['is_read'] !== '0' ? 1 : 0;
+    $statement = $pdo->prepare('UPDATE contact_messages SET is_read = :is_read WHERE id = :id');
+    $statement->execute(array(':is_read' => $isRead, ':id' => (int) $id));
+    admin_audit($pdo, $session['row']['admin_id'], $isRead ? 'message_read' : 'message_unread', 'contact_message', $id, null);
+    admin_respond(admin_message_data($pdo, $id), 200);
+}
+
+function admin_sitemap_urls($pdo)
+{
+    $config = admin_config();
+    $siteUrl = rtrim($config['site_url'], '/');
+    $today = gmdate('Y-m-d');
+    $urls = array();
+
+    foreach (array('uz', 'en', 'ru') as $locale) {
+        $urls[] = array(
+            'loc' => $siteUrl . '/' . $locale . '/',
+            'lastmod' => $today,
+            'changefreq' => 'monthly',
+            'priority' => '1.0',
+        );
+        $urls[] = array(
+            'loc' => $siteUrl . '/' . $locale . '/projects/',
+            'lastmod' => $today,
+            'changefreq' => 'monthly',
+            'priority' => '0.8',
+        );
+    }
+
+    $statement = $pdo->query('SELECT slug, updated_at FROM projects WHERE is_active = 1 ORDER BY sort_order ASC, id ASC');
+    foreach ($statement->fetchAll() as $project) {
+        $slug = (string) $project['slug'];
+        if (!preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $slug)) {
+            continue;
+        }
+        $lastmod = substr((string) $project['updated_at'], 0, 10);
+        if (!preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/', $lastmod)) {
+            $lastmod = $today;
+        }
+        foreach (array('uz', 'en', 'ru') as $locale) {
+            $urls[] = array(
+                'loc' => $siteUrl . '/' . $locale . '/projects/' . $slug . '/',
+                'lastmod' => $lastmod,
+                'changefreq' => 'monthly',
+                'priority' => '0.7',
+            );
+        }
+    }
+
+    return $urls;
+}
+
+function admin_write_sitemap($pdo)
+{
+    $urls = admin_sitemap_urls($pdo);
+    $xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    $xml .= "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n";
+    foreach ($urls as $url) {
+        $xml .= "  <url>\n";
+        $xml .= '    <loc>' . htmlspecialchars($url['loc'], ENT_QUOTES, 'UTF-8') . "</loc>\n";
+        $xml .= '    <lastmod>' . htmlspecialchars($url['lastmod'], ENT_QUOTES, 'UTF-8') . "</lastmod>\n";
+        $xml .= '    <changefreq>' . htmlspecialchars($url['changefreq'], ENT_QUOTES, 'UTF-8') . "</changefreq>\n";
+        $xml .= '    <priority>' . htmlspecialchars($url['priority'], ENT_QUOTES, 'UTF-8') . "</priority>\n";
+        $xml .= "  </url>\n";
+    }
+    $xml .= "</urlset>\n";
+
+    $path = dirname(__DIR__) . '/sitemap.xml';
+    $tmp = $path . '.tmp-' . bin2hex(random_bytes(4));
+    $bytes = file_put_contents($tmp, $xml, LOCK_EX);
+    if ($bytes === false) {
+        @unlink($tmp);
+        throw new RuntimeException('Sitemap is not writable');
+    }
+    if (!@rename($tmp, $path)) {
+        @unlink($tmp);
+        throw new RuntimeException('Sitemap could not be replaced');
+    }
+    @chmod($path, 0644);
+    return count($urls);
+}
+
+function admin_try_write_sitemap($pdo)
+{
+    try {
+        admin_write_sitemap($pdo);
+        return true;
+    } catch (Exception $error) {
+        error_log('admin sitemap error: ' . $error->getMessage());
+        return false;
+    }
+}
+
+function admin_handle_sitemap($pdo)
+{
+    admin_require_method('POST');
+    $session = admin_require_session($pdo);
+    admin_require_csrf($session);
+    try {
+        $count = admin_write_sitemap($pdo);
+    } catch (Exception $error) {
+        error_log('admin sitemap error: ' . $error->getMessage());
+        admin_fail('Sitemap could not be written. Check file permissions.', 'sitemap_write_failed', 500);
+    }
+    admin_audit($pdo, $session['row']['admin_id'], 'sitemap_generated', 'sitemap', null, array('urls' => $count));
+    admin_respond(array('updated' => true, 'urls' => $count), 200);
+}
+
+function admin_admin_data($row)
+{
+    $row['id'] = (int) $row['id'];
+    $row['telegram_id'] = (string) $row['telegram_id'];
+    $row['is_active'] = (int) $row['is_active'] === 1;
+    return $row;
+}
+
+function admin_validate_admin($input)
+{
+    $errors = array();
+    $telegramId = admin_text(isset($input['telegram_id']) ? $input['telegram_id'] : '', 20, false);
+    if ($telegramId === null || !preg_match('/^[0-9]{5,19}$/', $telegramId)) {
+        $errors['telegram_id'] = 'Telegram ID must contain 5-19 digits.';
+    }
+    $email = admin_text(isset($input['email']) ? $input['email'] : '', 190, false);
+    if ($email === null || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+        $errors['email'] = 'A valid email is required.';
+    }
+    $displayName = admin_text(isset($input['display_name']) ? $input['display_name'] : '', 120, true);
+    if ($displayName === null) {
+        $errors['display_name'] = 'Display name is too long.';
+    }
+    $isActive = !empty($input['is_active']) && (string) $input['is_active'] !== '0';
+
+    if ($errors) {
+        return array(null, $errors);
+    }
+    return array(array(
+        'telegram_id' => $telegramId,
+        'email' => $email,
+        'display_name' => $displayName === '' ? null : $displayName,
+        'is_active' => $isActive ? 1 : 0,
+    ), array());
+}
+
+function admin_active_count($pdo, $exceptId)
+{
+    $statement = $pdo->prepare('SELECT COUNT(*) FROM admin_users WHERE is_active = 1 AND id <> :id');
+    $statement->execute(array(':id' => (int) $exceptId));
+    return (int) $statement->fetchColumn();
+}
+
+function admin_handle_admins($pdo)
+{
+    $method = admin_require_method(array('GET', 'POST'));
+    $session = admin_require_session($pdo);
+    if ($method === 'GET') {
+        $statement = $pdo->query(
+            'SELECT id, telegram_id, email, display_name, telegram_username, is_active, last_login_at, created_at
+             FROM admin_users ORDER BY id ASC'
+        );
+        $items = array();
+        foreach ($statement->fetchAll() as $row) {
+            $items[] = admin_admin_data($row);
+        }
+        admin_respond($items, 200);
+    }
+
+    admin_require_csrf($session);
+    $validated = admin_validate_admin(admin_json_input());
+    if ($validated[1]) {
+        admin_headers();
+        http_response_code(422);
+        echo json_encode(array('status' => 'error', 'message' => 'Validation failed', 'code' => 'validation_failed', 'errors' => $validated[1]), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $admin = $validated[0];
+
+    try {
+        $statement = $pdo->prepare(
+            'INSERT INTO admin_users (telegram_id, email, display_name, is_active)
+             VALUES (:telegram_id, :email, :display_name, :is_active)'
+        );
+        $statement->execute(array(
+            ':telegram_id' => $admin['telegram_id'],
+            ':email' => $admin['email'],
+            ':display_name' => $admin['display_name'],
+            ':is_active' => $admin['is_active'],
+        ));
+        $id = (int) $pdo->lastInsertId();
+        admin_audit($pdo, $session['row']['admin_id'], 'admin_created', 'admin_user', $id, array('telegram_id' => $admin['telegram_id']));
+        $row = $pdo->prepare('SELECT id, telegram_id, email, display_name, telegram_username, is_active, last_login_at, created_at FROM admin_users WHERE id = :id');
+        $row->execute(array(':id' => $id));
+        admin_respond(admin_admin_data($row->fetch()), 201);
+    } catch (PDOException $error) {
+        if ($error->getCode() === '23000') {
+            admin_fail('This Telegram ID is already an admin', 'admin_exists', 409);
+        }
+        error_log('admin create error: ' . $error->getMessage());
+        admin_fail('Admin could not be created', 'save_failed', 500);
+    } catch (Exception $error) {
+        error_log('admin create error: ' . $error->getMessage());
+        admin_fail('Admin could not be created', 'save_failed', 500);
+    }
+}
+
+function admin_handle_admin_item($pdo, $id)
+{
+    $method = admin_require_method(array('GET', 'PUT', 'DELETE'));
+    $session = admin_require_session($pdo);
+    $statement = $pdo->prepare('SELECT id, telegram_id, email, display_name, telegram_username, is_active, last_login_at, created_at FROM admin_users WHERE id = :id LIMIT 1');
+    $statement->execute(array(':id' => (int) $id));
+    $row = $statement->fetch();
+    if (!$row) {
+        admin_fail('Admin not found', 'admin_not_found', 404);
+    }
+    $current = admin_admin_data($row);
+
+    if ($method === 'GET') {
+        admin_respond($current, 200);
+    }
+
+    admin_require_csrf($session);
+    if ($method === 'DELETE') {
+        if ((int) $id === (int) $session['row']['admin_id']) {
+            admin_fail('You cannot delete your own account', 'cannot_delete_self', 422);
+        }
+        if ($current['is_active'] && admin_active_count($pdo, $id) === 0) {
+            admin_fail('At least one active admin is required', 'last_admin', 422);
+        }
+        $delete = $pdo->prepare('DELETE FROM admin_users WHERE id = :id');
+        $delete->execute(array(':id' => (int) $id));
+        admin_audit($pdo, $session['row']['admin_id'], 'admin_deleted', 'admin_user', $id, array('telegram_id' => $current['telegram_id']));
+        admin_respond(array('deleted' => true, 'id' => (int) $id), 200);
+    }
+
+    $validated = admin_validate_admin(admin_json_input());
+    if ($validated[1]) {
+        admin_headers();
+        http_response_code(422);
+        echo json_encode(array('status' => 'error', 'message' => 'Validation failed', 'code' => 'validation_failed', 'errors' => $validated[1]), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $admin = $validated[0];
+    if ((int) $id === (int) $session['row']['admin_id'] && !$admin['is_active']) {
+        admin_fail('You cannot deactivate your own account', 'cannot_deactivate_self', 422);
+    }
+    if (!$admin['is_active'] && $current['is_active'] && admin_active_count($pdo, $id) === 0) {
+        admin_fail('At least one active admin is required', 'last_admin', 422);
+    }
+
+    try {
+        $update = $pdo->prepare(
+            'UPDATE admin_users SET telegram_id = :telegram_id, email = :email, display_name = :display_name, is_active = :is_active WHERE id = :id'
+        );
+        $update->execute(array(
+            ':telegram_id' => $admin['telegram_id'],
+            ':email' => $admin['email'],
+            ':display_name' => $admin['display_name'],
+            ':is_active' => $admin['is_active'],
+            ':id' => (int) $id,
+        ));
+        admin_audit($pdo, $session['row']['admin_id'], 'admin_updated', 'admin_user', $id, array('telegram_id' => $admin['telegram_id'], 'is_active' => $admin['is_active']));
+        $fresh = $pdo->prepare('SELECT id, telegram_id, email, display_name, telegram_username, is_active, last_login_at, created_at FROM admin_users WHERE id = :id');
+        $fresh->execute(array(':id' => (int) $id));
+        admin_respond(admin_admin_data($fresh->fetch()), 200);
+    } catch (PDOException $error) {
+        if ($error->getCode() === '23000') {
+            admin_fail('This Telegram ID is already an admin', 'admin_exists', 409);
+        }
+        error_log('admin update error: ' . $error->getMessage());
+        admin_fail('Admin could not be saved', 'save_failed', 500);
+    } catch (Exception $error) {
+        error_log('admin update error: ' . $error->getMessage());
+        admin_fail('Admin could not be saved', 'save_failed', 500);
     }
 }
 
@@ -1232,6 +1589,16 @@ try {
         admin_handle_projects($pdo);
     } elseif (preg_match('#^/admin/projects/([0-9]{1,10})/?$#', $requestPath, $matches)) {
         admin_handle_project_item($pdo, (int) $matches[1]);
+    } elseif ($requestPath === '/admin/messages') {
+        admin_handle_messages($pdo);
+    } elseif (preg_match('#^/admin/messages/([0-9]{1,10})/?$#', $requestPath, $matches)) {
+        admin_handle_message_item($pdo, (int) $matches[1]);
+    } elseif ($requestPath === '/admin/sitemap') {
+        admin_handle_sitemap($pdo);
+    } elseif ($requestPath === '/admin/admins') {
+        admin_handle_admins($pdo);
+    } elseif (preg_match('#^/admin/admins/([0-9]{1,10})/?$#', $requestPath, $matches)) {
+        admin_handle_admin_item($pdo, (int) $matches[1]);
     } else {
         admin_fail('Not found', 'not_found', 404);
     }
