@@ -20,7 +20,7 @@
 The implemented architecture is coherent: static Next pages, a PHP-only runtime backend, a DB-backed content API and a working two-step admin login. No blocking defect was found in the audited page/API/auth paths. The main risks are operational, not architectural:
 
 - production credentials and DNS are still missing;
-- the migration and documentation are committed locally but not pushed yet;
+- the migration and documentation are committed and pushed to `origin/main`;
 - admin-created slugs are outside the sitemap and the static detail fallback is not crawler-fresh;
 - contact messages have no storage/inbox yet.
 
@@ -28,11 +28,11 @@ The backlog below turns those findings into ordered work.
 
 ### Repository state (do not lose this context)
 
-The detail-page migration and documentation rework were committed locally on 2026-10-21 with `feat: migrate portfolio to Next.js with DB-backed content and admin` and `docs: align architecture, task brief and security guides`. The commits are **not pushed**. Only unrelated files (`CodeAnalyzer_v2.py` and the empty `README`) remain untracked on purpose. Review `git status` and `git diff` before the next commit; push only with owner approval.
+The detail-page migration and documentation rework were committed and pushed to `origin/main` on 2026-10-21 with `feat: migrate portfolio to Next.js with DB-backed content and admin` and `docs: align architecture, task brief and security guides`. Only unrelated files (`CodeAnalyzer_v2.py` and the empty `README`) remain untracked on purpose. Review `git status` and `git diff` before the next commit.
 
 ## Active work
 
-None. Migration and documentation are committed locally. The next action is the owner's push decision, followed by production configuration.
+None. Migration and documentation are committed and pushed. The next action is production configuration.
 
 ## Baseline completed
 
@@ -41,6 +41,7 @@ None. Migration and documentation are committed locally. The next action is the 
 - Next.js homepage: static export, theme toggle, mobile nav, reveal, tilt, project filter, GitHub fetch, contact form, content API fallback.
 - React listing pages at `/{uz,en,ru}/projects/` with theme persistence, mobile nav, language switcher and project cards.
 - MySQL schema/seed and content API tested for uz/en/ru, invalid `lang`, missing slug and DB 503.
+- Contact form posts to the public endpoint without sending an unused API token.
 - Project detail migration: React routes, `ProjectDetail.jsx`, API refresh, `results`/`stack_notes`, admin fields, seed/migration SQL and Apache fallback for new slugs.
 - Admin panel: Telegram HMAC + email OTP, hashed one-time codes, HttpOnly/Secure/SameSite cookies, CSRF, rate limits, audit log and 3-language profile/project CRUD.
 - Apache checks: admin PATH_INFO is not caught by the fallback, `backend/`/`database/`/`config.local.php` are denied, and known + admin-created detail URLs return 200.
@@ -50,9 +51,7 @@ None. Migration and documentation are committed locally. The next action is the 
 | Prio | Problem | Evidence / where | Next action |
 |---|---|---|---|
 | P1 | Production DB, Telegram, email and app-secret settings are missing | `config.local.php` / env; `backend/config.php` | Create the cPanel DB; import schema/seed for a fresh DB or run the migration for an existing one; write gitignored config; set `APP_SECRET`, bot token/username, admin Telegram ID and mail driver |
-| P1 | Local commits are not pushed yet | `git status`, `git log` | Push after owner approval; keep secrets and unrelated files out |
 | P2 | Contact messages are not stored in MySQL and there is no admin inbox | `api.php` form handler | Add `contact_messages` and a read-only admin inbox without breaking the Sitejet form contract; owner decision required |
-| P2 | The form sends a hardcoded `X-Api-Token: otaboyev-dev-token` | `js/portfolio.js`, `components/Home.jsx`, `api.php` | Decide the token policy; if the public endpoint does not need it, remove the header and document the replacement |
 | P2 | `en/*` legacy Sitejet pages have no uz/ru counterparts | `en/portfolio`, `en/tech-stack`, … | Owner decision: keep and translate, or remove from the repo/sitemap |
 | P2 | Only the bootstrap admin exists; extra admins need a manual DB insert | `admin_users` | Decide whether to add a small admin-management UI |
 | P3 | Admin-created slugs are not added to `sitemap.xml` automatically | `sitemap.xml`, admin projects | Add a sitemap generator or a rebuild/publish step when URLs change |
@@ -121,7 +120,6 @@ When architecture, routes, schema, deploy steps or security behavior change, upd
 
 ## Next actions
 
-1. Review `git status` and `git log`; push the local commits only with owner approval.
-2. Create production `config.local.php`/env, import schema/seed (or run the migration on an existing DB), configure BotFather and mail DNS, deploy `out/`, and test `/admin/` on HTTPS.
-3. Decide the P2 owner questions: contact inbox, dev-token policy, extra admins and the `en/*` legacy pages.
-4. Re-run `npm run check && npm run build` after any final edit.
+1. Create production `config.local.php`/env, import schema/seed (or run the migration on an existing DB), configure BotFather and mail DNS, deploy `out/`, and test `/admin/` on HTTPS.
+2. Decide the P2 owner questions: contact inbox, extra admins and the `en/*` legacy pages.
+3. Re-run `npm run check && npm run build` after any final edit.

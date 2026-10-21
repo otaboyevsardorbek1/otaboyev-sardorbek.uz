@@ -186,9 +186,9 @@ Order matters: correctness and production safety before optional features.
 
 | Phase | Goal | Status / items |
 |---|---|---|
-| 0 | Repo hygiene | Completed locally: migration and docs are committed; push awaits owner approval. Remove or ignore the empty `README` and `CodeAnalyzer_v2.py` only with owner approval |
+| 0 | Repo hygiene | Completed: migration and docs are committed and pushed to `origin/main`. Remove or ignore the empty `README` and `CodeAnalyzer_v2.py` only with owner approval |
 | 1 | Production readiness | cPanel DB, `config.local.php`, import schema/seed or migration, BotFather domain, email DNS/SPF/DKIM, HTTPS admin test |
-| 2 | Content operations | Decide contact inbox, dev-token policy, extra admins; add a rebuild/publish hook so admin edits reach static HTML crawlers |
+| 2 | Content operations | Decide contact inbox, extra admins; add a rebuild/publish hook so admin edits reach static HTML crawlers |
 | 3 | SEO and routing | Auto-generate `sitemap.xml` for new slugs; improve generic detail metadata/hreflang; decide real 404 vs SPA fallback |
 | 4 | Maintenance | Idempotent migration runner, CI (`npm ci`, check, build), legacy cleanup, remove unused legacy assets once safe |
 | — | Completed | CV downloads; 15-URL sitemap; canonical/hreflang; React home/listing; MySQL content API; Telegram + OTP admin; 9 detail pages migrated; Apache fallback for new slugs |

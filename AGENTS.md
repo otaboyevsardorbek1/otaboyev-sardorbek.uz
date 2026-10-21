@@ -138,10 +138,9 @@ GitHub bo‘limi tashqi `api.github.com` ga bog‘liq (tokensiz, rate limit bor)
 - `en/*` legacy Sitejet sahifalari uz/ru muqobilisiz; `out/` ga ko‘chirilmaydi va sitemap’da yo‘q. Ulardagi canonical domeni xato (`otaboyevsardorbek.uz`).
 - `.htaccess` catch-all noma’lum URL’ni 404 o‘rniga `/index.html` ga yuboradi.
 - Contact form xabarlari MySQL’ga saqlanmaydi; admin inbox, media upload va multi-admin UI hali yo‘q.
-- Contact form JS’da `X-Api-Token: otaboyev-dev-token` hardcoded; endpoint tokenni tekshirmaydi, lekin siyosat o‘zgarsa ikkala faylni birga ko‘r.
 - Production DB/Telegram/email credential’lari hali berilmagan; `config.local.php` yozilmaguncha content API 503, admin auth `enabled:false` yoki email yuborilmaydi.
 - Telegram Login Widget lokal HTTP’da ishlamaydi; BotFather’da `/setdomain otaboyev-sardorbek.uz` va HTTPS production testi kerak.
-- 2026-10-21 holat: migration kodi va hujjatlar lokal commitda, lekin hali push qilinmagan. `out/` gitignored. `CodeAnalyzer_v2.py` va bo‘sh `README` ataylab commit qilinmagan — ular repo ishiga aloqasi yo‘q.
+- 2026-10-21 holat: migration kodi va hujjatlar `origin/main` ga push qilindi. `out/` gitignored. `CodeAnalyzer_v2.py` va bo‘sh `README` ataylab commit qilinmagan — ular repo ishiga aloqasi yo‘q.
 - `github_keys.txt` — maxfiy va `.gitignore` da. O‘qimang, commit qilmang. Bo‘sh `README` va `CodeAnalyzer_v2.py` repo ishiga aloqasi yo‘q.
 
 ## Qoidalar
