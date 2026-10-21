@@ -6,6 +6,17 @@ if (getenv('APP_ENV') !== 'local') {
     ini_set('display_errors', '0');
 }
 
+header_remove('X-Powered-By');
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('X-XSS-Protection: 0');
+header('Referrer-Policy: no-referrer');
+header('Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), usb=()');
+header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
+header('Cross-Origin-Resource-Policy: same-origin');
+header('X-Permitted-Cross-Domain-Policies: none');
+header('Strict-Transport-Security: max-age=31536000');
+
 require_once __DIR__ . '/backend/contact.php';
 
 $requestMethod = $_SERVER['REQUEST_METHOD'] ?? 'GET';

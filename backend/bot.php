@@ -166,7 +166,7 @@ function bot_mail_list($inbox, $limit)
     foreach (array_slice($sequence, 0, $limit) as $msgno) {
         $uid = @imap_uid($inbox, $msgno);
         $overview = @imap_fetch_overview($inbox, (string) $msgno, 0);
-        $row = is_array($overview) && isset($overview[0]) ? $overview[0] : array();
+        $row = is_array($overview) && isset($overview[0]) ? (array) $overview[0] : array();
         $rows[] = array(
             'uid' => (int) $uid,
             'from' => isset($row['from']) ? bot_clean_header($row['from'], 120) : '',
@@ -192,7 +192,7 @@ function bot_mail_read($inbox, $uid)
     }
 
     $overview = @imap_fetch_overview($inbox, (string) $msgno, 0);
-    $row = is_array($overview) && isset($overview[0]) ? $overview[0] : array();
+    $row = is_array($overview) && isset($overview[0]) ? (array) $overview[0] : array();
     $body = @imap_fetchbody($inbox, $msgno, '1');
     if ($body === false || trim((string) $body) === '') {
         $body = @imap_body($inbox, $msgno);
@@ -373,7 +373,7 @@ function bot_handle_webhook()
 
     try {
         bot_handle_update($update);
-    } catch (Exception $error) {
+    } catch (Throwable $error) {
         error_log('bot update error: ' . $error->getMessage());
     }
 
