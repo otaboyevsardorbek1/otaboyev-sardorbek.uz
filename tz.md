@@ -1,107 +1,127 @@
-## 7️⃣ Brauzerda tekshirish (asosiy test)
+# Task brief — current state, backlog and acceptance
 
-Brauzerda quyidagi URL'larni oching:
+> **Source of truth for architecture and rules:** [AGENTS.md](AGENTS.md).
+> **Long-term plan and hosting notes:** [tz_master.md](tz_master.md).
+> This file is the current operational brief: what is true today, what is blocked, what comes next.
 
-| URL | Kutilayotgan natija |
-|---|---|
-| https://otaboyev-sardorbek.uz/files/sardorbek-otaboyev-cv-en.pdf | PDF ochiladi (EN) |
-| https://otaboyev-sardorbek.uz/files/sardorbek-otaboyev-cv-ru.pdf | PDF ochiladi (RU) |
-| https://otaboyev-sardorbek.uz/files/sardorbek-otaboyev-cv-uz.pdf | PDF ochiladi (UZ) |
-| https://otaboyev-sardorbek.uz/files/sardorbek-otaboyev-cv-en.txt | Matn ochiladi |
+## Snapshot — 2026-10-21
 
-Yoki terminaldan:
+- Frontend: Next.js App Router at the repo root, static export to `out/`; home, listing and 9 project detail pages are React.
+- Detail pages: build-time fallback from `content/locales.js`, then refresh from `/api.php/projects/{slug}?lang=...`; title, meta description and canonical are updated client-side.
+- Admin-created projects: `.htaccess` rewrites unknown `/{locale}/projects/<slug>/` URLs to `/{locale}/projects/view/?slug=...`; the client fetches the API and updates canonical.
+- Backend: PHP `api.php` + `backend/*.php`; MySQL content API, contact form, Sitejet proxy and protected `/admin/` CRUD.
+- Auth: Telegram Login Widget → email OTP → session with CSRF; admin routes are noindex and have no wildcard CORS.
+- DB: `database/schema.sql` + `database/seed.sql` seed 1 profile, 3 projects and 9 translations; existing databases need `database/migrate-project-sections.sql`. Re-importing `seed.sql` resets content and overwrites admin edits.
+- SEO: `sitemap.xml` has the 15 real URLs; canonical/hreflang exists on 3 homes, 3 listings and 9 detail pages.
+- Last verified: `npm run check` and `npm run build` pass; API returns 200/404/503 as expected; admin CRUD and headless UI work; Apache serves the generic detail fallback.
 
-```bash
-curl -I https://otaboyev-sardorbek.uz/files/sardorbek-otaboyev-cv-en.pdf
-# Kutilayotgan: HTTP/1.1 200 OK, Content-Type: application/pdf
+### Audit conclusions
 
-curl -I https://otaboyev-sardorbek.uz/files/sardorbek-otaboyev-cv-uz.pdf
-# Kutilayotgan: HTTP/1.1 200 OK
-```
+The implemented architecture is coherent: static Next pages, a PHP-only runtime backend, a DB-backed content API and a working two-step admin login. No blocking defect was found in the audited page/API/auth paths. The main risks are operational, not architectural:
 
----
+- production credentials and DNS are still missing;
+- the migration and documentation are committed locally but not pushed yet;
+- admin-created slugs are outside the sitemap and the static detail fallback is not crawler-fresh;
+- contact messages have no storage/inbox yet.
 
-## 8️⃣ Portfolio'ga havolalarni qo'shish
+The backlog below turns those findings into ordered work.
 
-`index.html` da **Contact** section'da quyidagilarni qo'shing:
+### Repository state (do not lose this context)
 
-```html
-<a href="/files/sardorbek-otaboyev-cv-en.pdf" target="_blank" class="contact-link">
-  <span class="contact-link-icon">🇬🇧</span>
-  <div class="contact-link-body">
-    <span class="contact-link-label">Resume (English)</span>
-    <span class="contact-link-value">Download PDF</span>
-  </div>
-</a>
+The detail-page migration and documentation rework were committed locally on 2026-10-21 with `feat: migrate portfolio to Next.js with DB-backed content and admin` and `docs: align architecture, task brief and security guides`. The commits are **not pushed**. Only unrelated files (`CodeAnalyzer_v2.py` and the empty `README`) remain untracked on purpose. Review `git status` and `git diff` before the next commit; push only with owner approval.
 
-<a href="/files/sardorbek-otaboyev-cv-ru.pdf" target="_blank" class="contact-link">
-  <span class="contact-link-icon">🇷🇺</span>
-  <div class="contact-link-body">
-    <span class="contact-link-label">Резюме (Русский)</span>
-    <span class="contact-link-value">Скачать PDF</span>
-  </div>
-</a>
+## Active work
 
-<a href="/files/sardorbek-otaboyev-cv-uz.pdf" target="_blank" class="contact-link">
-  <span class="contact-link-icon">🇺🇿</span>
-  <div class="contact-link-body">
-    <span class="contact-link-label">Rezyume (O'zbekcha)</span>
-    <span class="contact-link-value">Yuklab olish</span>
-  </div>
-</a>
-```
+None. Migration and documentation are committed locally. The next action is the owner's push decision, followed by production configuration.
 
----
+## Baseline completed
 
-## 9️⃣ Git commit (agar `files/` repo ichida bo'lsa)
+- CV downloads: PDF primary + TXT fallback, per locale.
+- `sitemap.xml` with 15 real URLs; canonical + hreflang on homes, listings and details.
+- Next.js homepage: static export, theme toggle, mobile nav, reveal, tilt, project filter, GitHub fetch, contact form, content API fallback.
+- React listing pages at `/{uz,en,ru}/projects/` with theme persistence, mobile nav, language switcher and project cards.
+- MySQL schema/seed and content API tested for uz/en/ru, invalid `lang`, missing slug and DB 503.
+- Project detail migration: React routes, `ProjectDetail.jsx`, API refresh, `results`/`stack_notes`, admin fields, seed/migration SQL and Apache fallback for new slugs.
+- Admin panel: Telegram HMAC + email OTP, hashed one-time codes, HttpOnly/Secure/SameSite cookies, CSRF, rate limits, audit log and 3-language profile/project CRUD.
+- Apache checks: admin PATH_INFO is not caught by the fallback, `backend/`/`database/`/`config.local.php` are denied, and known + admin-created detail URLs return 200.
 
-```bash
-cd /home/host9590/public_html
-git status
+## Backlog
 
-# Yangi fayllarni qo'shish
-git add files/sardorbek-otaboyev-cv-*.{txt,pdf}
-git commit -m "feat: add multi-language CV (EN/RU/UZ) in TXT and PDF"
-git push origin main
-```
-
-**Agar `files/` `.gitignore`'da bo'lsa:**
-```bash
-cat .gitignore | grep files
-```
-Agar `files/` ignore qilingan bo'lsa — serverga to'g'ridan-to'g'ri `scp` bilan yuklash yetarli, git kerak emas.
-
----
-
-## 📋 Yakuniy holat jadvali
-
-| # | Qadam | Buyruq | Holat |
+| Prio | Problem | Evidence / where | Next action |
 |---|---|---|---|
-| 1 | UZ PDF yaratish | ✅ Bajarildi | ✅ |
-| 2 | 3 PDF'ni ochib tekshirish | `xdg-open *.pdf` | ⏳ **Hozir** |
-| 3 | Eski `.tx` va `.pdf` tozalash | `mv ... ~/Desktop/cv-backup/` | ⏳ |
-| 4 | Serverga yuklash | `scp ... otaboyev:` | ⏳ |
-| 5 | Serverda tekshirish | `ssh otaboyev; ls -lh` | ⏳ |
-| 6 | Brauzerda tekshirish | `curl -I https://...` | ⏳ |
-| 7 | HTML'ga havolalar qo'shish | Edit `index.html` | ⏳ |
+| P1 | Production DB, Telegram, email and app-secret settings are missing | `config.local.php` / env; `backend/config.php` | Create the cPanel DB; import schema/seed for a fresh DB or run the migration for an existing one; write gitignored config; set `APP_SECRET`, bot token/username, admin Telegram ID and mail driver |
+| P1 | Local commits are not pushed yet | `git status`, `git log` | Push after owner approval; keep secrets and unrelated files out |
+| P2 | Contact messages are not stored in MySQL and there is no admin inbox | `api.php` form handler | Add `contact_messages` and a read-only admin inbox without breaking the Sitejet form contract; owner decision required |
+| P2 | The form sends a hardcoded `X-Api-Token: otaboyev-dev-token` | `js/portfolio.js`, `components/Home.jsx`, `api.php` | Decide the token policy; if the public endpoint does not need it, remove the header and document the replacement |
+| P2 | `en/*` legacy Sitejet pages have no uz/ru counterparts | `en/portfolio`, `en/tech-stack`, … | Owner decision: keep and translate, or remove from the repo/sitemap |
+| P2 | Only the bootstrap admin exists; extra admins need a manual DB insert | `admin_users` | Decide whether to add a small admin-management UI |
+| P3 | Admin-created slugs are not added to `sitemap.xml` automatically | `sitemap.xml`, admin projects | Add a sitemap generator or a rebuild/publish step when URLs change |
+| P3 | Detail fallback is build-time HTML; crawlers may see stale copy after admin edits | `components/ProjectDetail.jsx`, `[slug]/page.js` | Accept for now or add a production rebuild/publish hook |
+| P3 | Generic detail route serves listing metadata/canonical until JS runs | `app/(site)/[locale]/projects/view/page.js` | Add static/generic metadata strategy or accept the JS-only correction |
+| P3 | Unknown URLs go to `/index.html` instead of a real 404 | `.htaccess` | Accept the SPA-like fallback or add a real 404 page |
+| P3 | `database/migrate-project-sections.sql` is a one-time, non-idempotent migration | `database/migrate-project-sections.sql` | Add an idempotent migration runner if the schema changes again |
+| P3 | No CI pipeline; checks are manual | repo root | Add a small workflow for `npm ci`, `npm run check`, `npm run build` and PHP lint |
+| P3 | Legacy HTML, `js/portfolio.js`, empty `README` and `CodeAnalyzer_v2.py` create noise | repo root / legacy pages | Remove or archive only with owner approval; never edit Sitejet artifacts casually |
 
----
+Anything that changes visible content, metadata or links must be applied to `uz`, `en` and `ru` in the same change.
 
-## 🚀 Bir buyruqda: tozalash + yuklash
+## Typical tasks
 
-Agar barcha PDF'lar to'g'ri ko'rinsa, quyidagi ketma-ketlikni ishlating:
+### Content change
 
-```bash
-cd ~/Desktop/otaboyev-sardorbek.uz/files && \
-mkdir -p ~/Desktop/cv-backup && \
-mv sardorbek-otaboyev-cv.pdf ~/Desktop/cv-backup/ 2>/dev/null; \
-mv sardorbek-otaboyev-cv.tx ~/Desktop/cv-backup/ 2>/dev/null; \
-echo "=== Mahalliy fayllar ===" && \
-ls -lh && \
-echo "=== Serverga yuklash ===" && \
-scp sardorbek-otaboyev-cv-*.{txt,pdf} \
-    otaboyev:/home/host9590/public_html/files/ && \
-echo "✅ Serverga yuklandi!"
-```
+The **runtime source** is the admin panel + MySQL. For a code or fresh-install change:
 
----
+1. Update the relevant `content/locales.js` fallback in all three locales.
+2. Mirror the same text in `database/seed.sql`.
+3. If production already has the row, update it through `/admin/` or a controlled SQL import.
+4. Rebuild and verify the DB API returns the same text; remember that the static HTML only updates after a rebuild.
+
+### Project or CV update
+
+Update `files/sardorbek-otaboyev-cv-{uz,ru,en}.txt`, regenerate the PDFs with pandoc, then check every download link in all locales. Project copy lives in `content/locales.js`, `database/seed.sql` and the admin panel; detail routes are `/{locale}/projects/[slug]/`.
+
+### Admin change
+
+Keep the two-step flow (Telegram widget → email OTP), the `{status,data}` / `{status,error,message,code}` envelope, `X-CSRF-Token` on mutations and admin CORS separation. Never expose bot token, app secret, admin email or OTP codes in public JSON or logs. Test wrong OTP, expired challenge/session, CSRF failure and rate limits after every auth change. Do not add auth bypasses, hardcoded codes or public CRUD endpoints.
+
+### API change
+
+Preserve the envelope and the existing form contract: `POST /api.php/form_container/submit` with `id` and `form_<id>[ed-f-N]`. Form metadata comes from `https://api.sitehub.io`, not this repo. The token endpoint is `GET /api.php/websites` via `X-Api-Token` or `Authorization: Bearer`. Keep PHP 7.1 syntax in `api.php` and `backend/*.php`.
+
+### Adding a project
+
+- **Known/static project:** add the slug and all three translations to `content/locales.js` (`projectDetails`) and `database/seed.sql`, add the URL to `sitemap.xml`, then rebuild. The route is generated by `generateStaticParams`.
+- **Admin-only project:** create it in `/admin/`; it appears in the listing after the API fetch and uses `/projects/view/?slug=...` through Apache. The slug `view` is reserved. Add it to the sitemap manually if SEO matters.
+
+### Documentation change
+
+When architecture, routes, schema, deploy steps or security behavior change, update all three files together: `AGENTS.md` (canonical rules), `tz.md` (current state/backlog) and `tz_master.md` (long-term plan/contracts).
+
+## Verification checklist
+
+1. `npm run check`
+2. `npm run build`; confirm `out/` has 3 homes, 3 listings, 9 known details, 3 generic `view` routes and the 3 admin pages.
+3. Preview with DB env: `DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out`.
+4. `/uz/`, `/en/`, `/ru/` + one known detail + one generic detail; no unintended 404, CORS or hydration errors.
+5. API: profile/projects/detail for all locales, invalid `lang`, missing slug (404), DB unavailable (503).
+6. Contact form: network request to `/api.php/form_container/submit` succeeds.
+7. Admin: `/admin/` config `enabled`; Telegram callback → challenge cookie → email code (`log` locally) → session; wrong OTP, expired challenge/session, missing CSRF and admin CORS checks.
+8. Apache: known detail URL, admin-created slug fallback, denied `backend/`/`database/`/`config.local.php`, admin PATH_INFO not swallowed by the catch-all.
+9. `git diff --check`, `git diff --stat`, and review the complete diff before committing.
+
+## Acceptance criteria
+
+- Targeted page or feature works locally in all three locales.
+- `npm run check` and `npm run build` pass.
+- Content API returns correct data or a clean `db_unavailable` 503; the frontend falls back without breaking.
+- No unintended 404s, CORS errors, hydration warnings or JS console errors. A 404 from a deleted/inactive project and a 503 from a missing DB are expected and handled.
+- Admin flow: Telegram callback → challenge cookie → code verify → session → profile/project save → logout; admin responses have no wildcard CORS and use HttpOnly/Secure/SameSite cookies.
+- No locale, route or SEO regression; change follows the existing structure and styles.
+- Diff is limited to the files needed for the task.
+
+## Next actions
+
+1. Review `git status` and `git log`; push the local commits only with owner approval.
+2. Create production `config.local.php`/env, import schema/seed (or run the migration on an existing DB), configure BotFather and mail DNS, deploy `out/`, and test `/admin/` on HTTPS.
+3. Decide the P2 owner questions: contact inbox, dev-token policy, extra admins and the `en/*` legacy pages.
+4. Re-run `npm run check && npm run build` after any final edit.

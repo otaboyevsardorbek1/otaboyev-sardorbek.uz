@@ -1,179 +1,176 @@
 # AGENTS.md
 
-Ushbu fayl loyihada ishlaydigan AI agentlar uchun qo'llanma. Har bir satr repo'da tekshirilgan — generic maslahat yo'q.
+`otaboyev-sardorbek.uz` — Sardorbek Otaboyevning 3 tilli portfolio sayti. Frontend — repo ildizidagi Next.js (App Router, static export). Bosh sahifa, loyihalar ro‘yxati va 9 ta project detail sahifa React’da; detail sahifalar build vaqtidagi statik fallback bilan ochiladi va content API’dan yangilanadi. Backend — PHP `api.php` + MySQL content API va Telegram + email OTP bilan himoyalangan `/admin/` panel.
 
-## Project overview
+Oxirgi audit: **2026-10-21**. Joriy ish va backlog — [tz.md](tz.md), uzoq muddatli reja — [tz_master.md](tz_master.md).
 
-`otaboyev-sardorbek.uz` — Otaboyev Sardorbek (Backend Developer & AI Automation Specialist) ning shaxsiy portfolio sayti. **3 tilda** (uz / en / ru) xizmat ko'rsatadi. Statik frontend (`index.html` + `css/` + `js/`) va bitta PHP backend proxy (`api.php`) dan iborat. **Framework va build jarayoni yo'q** — vanilla HTML/CSS/JS.
+## Komandalar
 
-Sayt ikki qismdan iborat:
-1. **Asosiy portfolio** — `revamp.css` + `revamp.js` (qo'lda yozilgan, `.revamp-` prefiksli)
-2. **Sitejet runtime** — `webcard/`, `custom.*.css`, `custom.*.js`, `api.php` (avto-generatsiya qilingan, **tegmaslik**)
-
-## Setup
-
-```bash
-cd /home/host9590/public_html   # serverda
-# yoki
-cd ~/Desktop/otaboyev-sardorbek.uz   # lokalda
-
-# Lokal test (PHP proxy + statik fayllar)
-php -S localhost:8000
-# → http://localhost:8000/uz/ , /en/ , /ru/
-```
-
-**Serverga kirish:** `ssh otaboyev` (SSH kalit passphrase so'raladi).
-
-## Commands
-
-| Vazifa | Buyruq |
+| Vazifa | Komanda |
 |---|---|
-| Lokal serverni ishga tushirish | `php -S localhost:8000` |
-| Bitta tilni brauzerda ochish | `xdg-open http://localhost:8000/uz/` |
-| Deploy (serverga) | `ssh otaboyev` → `cd /home/host9590/public_html && git pull` |
-| Repo holati | `git status && git log --oneline -5` |
-| Yangi faylni qo'shish | `git add <fayl> && git commit -m "<message>" && git push` |
-| CV PDF qayta yaratish | `pandoc files/sardorbek-otaboyev-cv-<lang>.txt -o files/sardorbek-otaboyev-cv-<lang>.pdf -V geometry:margin=2cm --pdf-engine=xelatex -V mainfont="DejaVu Sans Mono"` |
-| HTML validatsiya | `tidy -errors -q uz/index.html 2>&1 \| head -30` |
-| CSS/JS hajmini tekshirish | `wc -c css/revamp.css js/revamp.js` |
+| Dependency o‘rnatish | `npm install` (yoki `npm ci`) |
+| Next dev server | `npm run dev` — API yo‘q; frontend statik fallback bilan ishlaydi |
+| Static export | `npm run build` → `out/`; postbuild `files/`, `js/`, `css/`, `favicon.svg`, `api.php`, `backend/`, `.htaccess`, `sitemap.xml` ni ko‘chiradi |
+| Export preview | `DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out` |
+| Sintaksis tekshiruvi | `npm run check` — `php -l api.php`, backend fayllari, `node --check js/portfolio.js`; JSX ni `npm run build` tekshiradi |
+| API health | `curl -s http://127.0.0.1:8000/api.php/health` |
+| Content API | `curl -s "http://127.0.0.1:8000/api.php/profile?lang=uz"` · `/api.php/projects?lang=uz` · `/api.php/projects/gitinsight?lang=uz` |
+| Admin config | `curl -s http://127.0.0.1:8000/api.php/admin/config` |
+| Tokenli endpoint | `curl -H "X-Api-Token: otaboyev-dev-token" http://127.0.0.1:8000/api.php/websites` |
+| DB (yangi) | `mysql -u USER -p DB_NAME < database/schema.sql` → `mysql -u USER -p DB_NAME < database/seed.sql` |
+| DB (eski) | Avval `database/migrate-project-sections.sql`; `database/seed.sql` faqat standart kontentni qayta yozish kerak bo‘lsa import qilinadi (mavjud admin kontenti o‘chadi) |
+| CV PDF | `pandoc files/sardorbek-otaboyev-cv-<lang>.txt -o files/sardorbek-otaboyev-cv-<lang>.pdf -V geometry:margin=2cm --pdf-engine=xelatex -V mainfont="DejaVu Sans Mono"` |
 
-## Verification order
+**Deploy:** cPanel’da MySQL DB yaratiladi, `config.local.php` yoziladi (yoki `DB_*` env beriladi), `npm ci && npm run build`, so‘ng `out/` tarkibi web rootga ko‘chiriladi. `out/` ichida `api.php`, `backend/`, `.htaccess`, `files/`, `sitemap.xml` bor. Production uchun HTTPS, haqiqiy DB, `APP_SECRET`, Telegram bot/ID va email sozlamalari majburiy.
 
-Har qanday o'zgarishdan keyin **shu tartibda** tekshirish:
+**Muhim:** PHP built-in server `.htaccess` ni o‘qimaydi. Rewrite/redirect xatti-harakatini Apache’da alohida tekshir. Apache’da `/api.php/admin/...` catch-all’ga tushmasligi, `config.local.php`/`backend/`/`database/` 403 bo‘lishi va project detail URL’lari 200 bo‘lishi tekshirilgan. Nginx uchun `.htaccess` o‘rniga ekvivalent `try_files`/rewrite kerak.
 
-```bash
-# 1. Sintaksis
-php -l api.php                    # faqat PHP o'zgartirilgan bo'lsa
-node --check js/revamp.js         # agar Node.js bor bo'lsa
+## Arxitektura
 
-# 2. Lokal serverda ochish
-php -S localhost:8000
-# Brauzer: /uz/, /en/, /ru/ — 3 til ham ishlashi kerak
+### Frontend (Next.js App Router, repo ildizi)
 
-# 3. Konsolda xato yo'qligini tekshirish (F12 → Console)
-#    - 404 (yo'q fayl)
-#    - CORS xatosi
-#    - JS runtime xatosi
+- `app/(redirect)/page.js` — `/` dan `navigator.language` bo‘yicha `/{uz,en,ru}/` ga client redirect.
+- `app/(site)/[locale]/layout.js` — `<html lang>`; `LOCALES` va `generateStaticParams`.
+- `app/(site)/[locale]/page.js` — metadata, canonical/hreflang, bosh sahifa.
+- `app/(site)/[locale]/projects/page.js` — uz/en/ru loyihalar ro‘yxati.
+- `app/(site)/[locale]/projects/[slug]/page.js` — 9 ta ma’lum project detail sahifa; `generateStaticParams`, canonical/hreflang va OG metadata.
+- `app/(site)/[locale]/projects/view/page.js` — admin yaratgan yangi slug uchun client fallback; `.htaccess` shu yerga yo‘naltiradi.
+- `components/Home.jsx` — `'use client'`: theme, mobil nav, reveal, tilt, project filter, GitHub fetch, contact form, content API fetch.
+- `components/ProjectsPage.jsx` — ro‘yxat sahifasi: theme, mobil nav, kartalar.
+- `components/ProjectDetail.jsx` — `'use client'`: statik fallback, API’dan yangilash, loading/404/503 holatlari, title/meta/canonical yangilash.
+- `app/admin/` — `/admin/` Telegram login, `/admin/verify/` email OTP, `/admin/dashboard/` protected panel.
+- `components/admin/` — API helper, profile editor, project manager; `css/admin.css` alohida admin styling.
+- `content/locales.js` — uz/en/ru matnlari, `projectDetails` fallback va `projectDetailLabels`.
+- `css/portfolio.css` — global CSS (Next layoutda import qilinadi).
+- `next.config.js` — `output: 'export'`, `trailingSlash: true`, `images.unoptimized`.
 
-# 4. Git diff
-git diff --stat
-```
+### Backend (PHP + MySQL)
 
-**Test yoki lint pipeline yo'q.** Har bir o'zgarish qo'lda brauzerda tekshiriladi.
+- `api.php` — request routing, contact form, token check, Sitejet proxy va content/admin include.
+- `backend/config.php` — DB, admin va mail sozlamalarini env yoki gitignored `config.local.php` dan oladi.
+- `backend/content.php` — public content API.
+- `backend/admin.php` — admin auth, session, CSRF, rate limit, audit va profile/project CRUD.
+- `backend/mailer.php` — `mail`, SMTP, Resend, Brevo va lokal `log` driver.
+- `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql` — sxema, seed va eski baza migratsiyasi.
 
-## Architecture
+### Legacy va Sitejet qismi
 
-```
-otaboyev-sardorbek.uz/
-├── index.html              # root redirect → /uz/ (387 bayt)
-├── api.php                 # ⚠️ Sitejet backend proxy (TEGMASLIK)
-├── .htaccess               # rewrite/redirect qoidalari (TEGMASLIK)
-├── sitemap.xml             # 3 til uchun URL'lar
-├── README.md               # loyiha qo'llanmasi
-├── github_keys.txt         # ⚠️ maxfiy — commit qilinmasin
-│
-├── uz/ en/ ru/             # 3 til versiyalari
-│   ├── index.html          # bosh sahifa (8 section)
-│   └── projects/
-│       ├── index.html      # loyihalar ro'yxati (filter bilan)
-│       ├── gitinsight/     # alohida project sahifasi (SAQLANADI)
-│       ├── service-platform/
-│       └── telegram-ops/
-│
-├── css/
-│   ├── custom.261016194537.css   # ⚠️ Sitejet (TEGMASLIK)
-│   ├── portfolio.css             # eski custom (ixtiyoriy)
-│   └── revamp.css                # ⭐ yangi premium dizayn
-│
-├── js/
-│   ├── custom.261016193506.js    # ⚠️ Sitejet (TEGMASLIK)
-│   ├── portfolio.js              # eski custom (ixtiyoriy)
-│   └── revamp.js                 # ⭐ yangi interaktivlik
-│
-├── bundles/flag-icon-css/        # 600+ bayroq SVG (TEGMASLIK)
-├── images/{0,1024,1920}/         # rasm variantlari (Sitejet)
-├── g/fonts/{roboto,ubuntu}/      # mahalliy shriftlar (TEGMASLIK)
-├── files/                        # CV fayllar (3 til × TXT+PDF)
-└── webcard/                      # ⚠️ Sitejet runtime (TEGMASLIK)
-```
+- `{uz,en,ru}/projects/<slug>/index.html` (9 sahifa) repo’da tarixiy ma’lumot sifatida qoladi, lekin `out/` ga ko‘chirilmaydi va servis qilinmaydi.
+- `js/portfolio.js` `out/js` ga ko‘chiriladi, lekin faol React sahifalar undan foydalanmaydi; u faqat tarixiy legacy HTML uchun.
+- `css/custom.261016194537.css`, `webcard/`, `bundles/`, `g/fonts/`, `images/`, `en/{portfolio,tech-stack,...}` — tegilmagan Sitejet artefaktlari. Bosh sahifalardan link yo‘q.
 
-- **Entry point:** `index.html` (root redirect) → `uz/index.html`
-- **Yagona backend:** `api.php` (Sitejet proxy, forma yuborish, image proxy)
-- **Build yo'q:** barcha fayllar to'g'ridan-to'g'ri brauzerga yuboriladi
+### `.htaccess`
 
-## Gotchas
+- Locale root rewrite, `api.php` PATH_INFO exclusion, config/backend/database deny va catch-all `RewriteRule . /index.html`.
+- Ma’lum project detail/listing papkalari `index.html` bilan `DirectoryIndex` orqali beriladi.
+- `out/` da `index.html` bo‘lmagan project slug `/{locale}/projects/view/?slug=...` ga rewrite qilinadi; per-slug statik rewrite qo‘shmang (loop).
+- Boshqa noma’lum URL 404 emas, `/index.html` ga ketadi; u client tomonda locale aniqlaydi.
+- `database/` va `backend/` HTTP’dan yopilgan; admin URL’lariga `X-Robots-Tag: noindex, nofollow`.
 
-### 🔴 Hech qachon o'zgartirmang
+## Content API (`api.php` + MySQL)
 
-- **`api.php`** — bu Sitejet bilan integratsiya qilingan proxy. Form yuborish, image proxy, `X-Api-Token` header handling shu yerda. Buzilsa — sayt ishlamaydi.
-- **`.htaccess`** — barcha URL rewrite qoidalari. Noto'g'ri tahrirlash → 500 xato yoki redirect loop.
-- **`css/custom.*.css`, `js/custom.*.js`** — Sitejet avto-generatsiya qiladi. Qo'lda o'zgartirilsa, keyingi Sitejet eksportida yo'qoladi.
-- **`webcard/`** — Sitejet runtime (bundle'lar). Tegilsa — sayt buziladi.
-- **`bundles/flag-icon-css/`** — 600+ bayroq SVG. O'chirmang, til almashtirgichda ishlatiladi.
+Envelope: `{status:"ok",data:...}` yoki `{status:"error",message,code}`.
 
-### 🟡 Konflikt oldini olish
+- `GET /api.php/health` (yoki `/status`) — `{status:"ok"}`.
+- `GET /api.php/profile?lang=uz|en|ru` — `{name,role,bio,quick_text,location,email,github,telegram,telegram_handle,avatar_url}`.
+- `GET /api.php/projects?lang=...` — `[{slug,category,tag,title,summary,tech[],repo_url,demo_url,detail_url}]`; faqat `is_active=1`.
+- `GET /api.php/projects/{slug}?lang=...` — qo‘shimcha `description`, `results[]`, `stack_notes[]`.
+- Noto‘g‘ri `lang` → `uz`. Topilmagan slug → `404 {status:"error",code:"project_not_found"}`.
+- DB sozlanmagan yoki ulanmagan → `503 {status:"error",code:"db_unavailable"}`. Frontend statik fallback’ga qaytadi.
+- `GET /api.php/websites` — `X-Api-Token` yoki `Authorization: Bearer`; noto‘g‘ri bo‘lsa 401.
+- `POST /api.php/form_container/submit` — contact form, token talab qilmaydi; `id=<formId>` + `form_<formId>[ed-f-N]` Sitejet form contractiga uzatiladi (MySQL’ga saqlanmaydi).
+- Boshqa yo‘llar `https://api.sitehub.io` ga proxy; `/images*` → `https://inter-cdn.com`.
+- Token tartibi: `API_TOKEN` → `SITEHUB_API_TOKEN` → `OTABOYEV_API_TOKEN`; dev fallback `otaboyev-dev-token` (productionda env majburiy).
+- `api.php` va `backend/*.php` “Compatible with PHP 7.1” — arrow fn, typed properties va boshqa 7.4+ sintaksisni qo‘shmang.
 
-- **`revamp.css`** dagi barcha selektorlar **`.revamp-` prefiksi** bilan boshlanishi kerak (masalan `.revamp-hero`, `.revamp-card`). Aks holda Sitejet uslublariga ta'sir qiladi.
-- **`revamp.js`** IIFE pattern'da yozilgan (`(function(){...})()`). Global o'zgaruvchilar chiqarmang.
-- **CSS prioritet tartibi:** `custom.*.css` → `portfolio.css` → `revamp.css` (oxirgi ustunlik oladi). Yangi qoidalar faqat `revamp.css` ga qo'shilsin.
+### Ma’lumotlar bazasi
 
-### 🟡 Ko'p tillilik
+- Jadvallar: `profiles`, `profile_translations`, `projects`, `project_translations`, `admin_users`, `admin_login_challenges`, `admin_sessions`, `admin_auth_events`, `admin_audit_log`.
+- `tech`, `results`, `stack_notes` — JSON matn (`TEXT`), PHP’da `json_decode`.
+- `database/seed.sql` — 1 profil, 3 loyiha va 9 tarjima (uz/en/ru).
+- Yangi o‘rnatish `schema.sql` dan oladi; eski bazaga `database/migrate-project-sections.sql` bir marta qo‘llanadi. `seed.sql` faqat standart kontentni tiklash uchun qayta import qilinadi — u mavjud admin tahrirlarini bosib ketadi. Migratsiya idempotent emas.
+- `database/schema.sql`, `database/seed.sql` va `database/migrate-project-sections.sql` versiyalanadi (`*.sql` ignore’dan istisno). `database/` web’dan `.htaccess` bilan yopilgan; `out/` ga ko‘chirilmaydi.
 
-- 3 tilni **bir xil** yangilash kerak. Bittasini o'zgartirib, boshqasini eski qoldirmang — SEO buziladi.
-- Har bir `index.html` da `<html lang="uz|en|ru">` to'g'ri bo'lishi kerak.
-- `hreflang` linklari uch tilda ham mavjud bo'lsin (`uz`, `en`, `ru`, `x-default`).
+## Admin auth va xavfsizlik
 
-### 🟡 Forma yuborish
+- Flow: Telegram Login Widget → HMAC + `auth_date` tekshiruvi → challenge cookie → emailga 6 xonali OTP → session cookie.
+- `backend/admin.php` OTP’ni HMAC bilan hashlaydi; 6 raqam, 10 daqiqa, 5 urinish; challenge va session muddatlari cheklangan.
+- Cookie’lar: `admin_session` HttpOnly, HTTPS’da Secure, `SameSite=Strict`; `admin_challenge` HttpOnly, `SameSite=Lax`.
+- Mutation’larda `X-CSRF-Token` majburiy; rate limit, `admin_auth_events` va `admin_audit_log` mavjud.
+- `APP_SECRET` aniq 64 hex bo‘lmasa, email driver sozlanmagan bo‘lsa, production `SITE_URL` HTTPS bo‘lmasa yoki Telegram bot token/username yoki numeric admin ID noto‘g‘ri bo‘lsa auth o‘chiq (`enabled:false`).
+- Bot token, app secret yoki OTP’ni public JSON/logga chiqarmang. Admin response’larda wildcard CORS yo‘q.
+- Admin route’lar: `GET /api.php/admin/config`, `GET /api.php/admin/auth/telegram`, `GET /api.php/admin/auth/status`, `POST /api.php/admin/auth/verify`, `POST /api.php/admin/auth/resend`, `GET /api.php/admin/session[?optional=1]`, `POST /api.php/admin/logout`, `GET/PUT /api.php/admin/profile`, `GET/POST /api.php/admin/projects`, `GET/PUT/DELETE /api.php/admin/projects/{id}`.
+- Admin project slug’i `view` bo‘lishi mumkin emas — u fallback route bilan to‘qnashadi.
 
-- `contact form` → `/api.php/contact` ga POST qiladi.
-- Agar backend ishlamasa, JS `mailto:` ga fallback qiladi (`js/revamp.js` da).
-- Sitejet form config `api.php` orqali olinadi — `id` maydoni bilan.
+## Til almashtirish — birga o‘zgaradi
 
-### 🟡 CV fayllar
+1. `content/locales.js` — barcha matnlar, `projectDetails` va `projectDetailLabels`.
+2. `app/(redirect)/page.js` dagi `SUPPORTED`.
+3. `content/locales.js` dagi `LOCALES` (layout/page `generateStaticParams` shundan oladi).
+4. `.htaccess` locale, API exclusion va catch-all qoidalari.
+5. `sitemap.xml` — 15 real URL (3 home + 3 listing + 9 detail).
+6. `canonical` + `hreflang` — 3 home + 3 listing + 9 detail.
+7. `components/ProjectDetail.jsx` dagi `.lang-switcher` va `[slug]/page.js` metadata.
+8. `database/seed.sql` tarjimalari (`profile_translations`, `project_translations`).
 
-- `files/` papkasida 3 tilda `sardorbek-otaboyev-cv-{en,ru,uz}.txt` va `.pdf`
-- Eski `sardorbek-otaboyev-cv.pdf` va `sardorbek-otaboyev-cv.tx` (noto'g'ri nom) — o'chirilgan/backup qilingan bo'lishi kerak
-- PDF yaratish: `pandoc ... -V mainfont="DejaVu Sans Mono"` (Kirill va lotin apostroflari uchun majburiy)
+Matn o‘zgarsa — 3 tilda ham. `id`, `class`, `name`, `data-*` tarjima qilinmaydi.
 
-## Conventions
+## Tekshirish tartibi
 
-- **Commit xabarlari:** ingliz tilida, `feat:`, `fix:`, `docs:`, `chore:` prefikslari bilan (Conventional Commits).
-- **Yangi sahifa qo'shilsa** — `sitemap.xml` ga ham 3 tilda qo'shilsin.
-- **Yangi matn qo'shilsa** — 3 tilda yozilsin.
-- **CSS:** BEM uslubi (`.revamp-card__title`, `.revamp-btn--primary`).
-- **JS:** IIFE + `'use strict'`, `IntersectionObserver` bilan animatsiyalar.
-- **Rasmlar:** `loading="lazy"`, `decoding="async"`, `width`/`height` atributlari bilan.
-- **Shriftlar:** Google Fonts — `Inter` + `JetBrains Mono`. Mahalliy `g/fonts/` (Roboto, Ubuntu) — Sitejet uchun, o'chirmang.
-- **Icons:** `https://cdn.simpleicons.org/<slug>/<hex>` orqali (masalan `/go/00ADD8`).
+1. `npm run check`.
+2. `npm run build` — xatosiz export + postbuild copy.
+3. Test DB bilan: `DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out`.
+4. `/uz/`, `/en/`, `/ru/` + bitta ma’lum detail; Apache’da admin yaratgan slug `/uz/projects/<slug>/` fallback’i; F12 → Console/Network’da kutilmagan 404, CORS yoki hydration xatosi yo‘qligi.
+5. API: profile/projects/detail (uz/en/ru, invalid lang, 404 slug, DB yo‘q → 503).
+6. Formani yuborib ko‘r (Network’da `/api.php/form_container/submit`).
+7. Admin: `/admin/` config `enabled`; Telegram callback → challenge cookie → email kod (lokalda `log`) → session; noto‘g‘ri OTP, expired challenge/session, CSRF yo‘qligi, admin CORS header yo‘qligi; dashboard headless xatosiz.
+8. `git diff --check` va `git diff --stat`.
 
-## References
+GitHub bo‘limi tashqi `api.github.com` ga bog‘liq (tokensiz, rate limit bor) — offline fallback xato emas.
+
+## Ma’lum cheklovlar
+
+- Detail sahifalarning statik HTML’i build vaqtidagi fallback; admin tahrirlari API fetch’dan keyin ko‘rinadi. SEO/crawler uchun to‘liq yangi matn olishda rebuild kerak.
+- Admin yaratgan yangi slug faqat Apache rewrite bilan `/projects/view/?slug=...` orqali ishlaydi; PHP built-in server bu URL’ni 404 qaytaradi.
+- Yangi slug `sitemap.xml` ga avtomatik qo‘shilmaydi.
+- Generic detail route’ning statik metadata/canonical’i listing’ga ishora qiladi; client JS keyin haqiqiy URL’ga yangilaydi.
+- `{uz,en,ru}/projects/<slug>/index.html` legacy nusxalari repo’da qoladi, lekin `out/` da servis qilinmaydi; ularni tahrirlash saytga ta’sir qilmaydi.
+- `en/*` legacy Sitejet sahifalari uz/ru muqobilisiz; `out/` ga ko‘chirilmaydi va sitemap’da yo‘q. Ulardagi canonical domeni xato (`otaboyevsardorbek.uz`).
+- `.htaccess` catch-all noma’lum URL’ni 404 o‘rniga `/index.html` ga yuboradi.
+- Contact form xabarlari MySQL’ga saqlanmaydi; admin inbox, media upload va multi-admin UI hali yo‘q.
+- Contact form JS’da `X-Api-Token: otaboyev-dev-token` hardcoded; endpoint tokenni tekshirmaydi, lekin siyosat o‘zgarsa ikkala faylni birga ko‘r.
+- Production DB/Telegram/email credential’lari hali berilmagan; `config.local.php` yozilmaguncha content API 503, admin auth `enabled:false` yoki email yuborilmaydi.
+- Telegram Login Widget lokal HTTP’da ishlamaydi; BotFather’da `/setdomain otaboyev-sardorbek.uz` va HTTPS production testi kerak.
+- 2026-10-21 holat: migration kodi va hujjatlar lokal commitda, lekin hali push qilinmagan. `out/` gitignored. `CodeAnalyzer_v2.py` va bo‘sh `README` ataylab commit qilinmagan — ular repo ishiga aloqasi yo‘q.
+- `github_keys.txt` — maxfiy va `.gitignore` da. O‘qimang, commit qilmang. Bo‘sh `README` va `CodeAnalyzer_v2.py` repo ishiga aloqasi yo‘q.
+
+## Qoidalar
+
+- Eng kichik diff. Next.js/React’dan boshqa framework yoki bundler qo‘shmang.
+- Yangi UI — `app/` va `components/`; umumiy CSS — `css/portfolio.css`. Legacy sahifalarga tegish kerak bo‘lsa, avval sababini yozing.
+- `api.php`, backend API va `.htaccess` ni faqat aniq topshiriq bo‘yicha o‘zgartiring; API envelope’ni (`{status,data|message,code}`) saqlang.
+- `api.php`/`backend/*.php` PHP 7.1 sintaksisida qolsin.
+- `css/custom.*.css`, `webcard/`, `bundles/`, `g/fonts/`, `images/` — Sitejet artefaktlari; tahrirlamang.
+- Barcha matn 3 tilda. `id`, `class`, `name`, `data-*` tarjima qilinmaydi.
+- Maxfiy fayllar (`github_keys.txt`, `config.local.php`, `.env`) commit qilinmaydi. `database/` va `backend/` ni web rootda HTTP’dan yoping; `.htaccess` buni qiladi.
+- Admin auth’ni bypass qiladigan dev flag, hardcoded OTP yoki public CRUD endpoint qo‘shmang. CSRF headerini olib tashlamang.
+- Commit xabarlari ingliz tilida, Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`).
+- `AGENTS.md` — yagona instruction fayl. `agents.md` (kichik harfli) faqat shu faylga ishora qiladi.
+- Arxitektura, route, DB sxema yoki deploy tartibi o‘zgarsa — shu uch hujjatni (`AGENTS.md`, `tz.md`, `tz_master.md`) birga yangilang.
+
+## Hujjatlar
 
 | Fayl | Nima uchun |
 |---|---|
-| `README.md` | Umumiy loyiha tavsifi, deploy qadamlari |
-| `.gitignore` | `webcard/`, `github_keys.txt`, `custom.*` — git'dan tashqarida |
-| `sitemap.xml` | 3 til URL xaritasi (SEO) |
-| `css/revamp.css` | Yangi premium dizayn (`.revamp-` prefiks) |
-| `js/revamp.js` | Interaktivlik (theme, filter, GitHub API, form) |
-| `files/sardorbek-otaboyev-cv-{en,ru,uz}.txt` | CV manba (PDF qayta yaratish uchun) |
-| `images/{0,1024,1920}/` | Sitejet responsive rasm variantlari |
-
-## Eslatma — agent uchun
-
-Agar topshiriq **"sayt dizaynini yangila"**, **"yangi section qo'sh"**, yoki **"animatsiya qo'sh"** bo'lsa:
-- Faqat `css/revamp.css` va `js/revamp.js` ga o'zgartirish kiriting.
-- `uz/`, `en/`, `ru/` dagi `index.html` larni ham 3 tilda yangilang.
-- Hech qachon `api.php`, `.htaccess`, `webcard/`, `custom.*` ga tegmang.
-
-Agar topshiriq **"CV yangila"** bo'lsa:
-- `files/sardorbek-otaboyev-cv-{en,ru,uz}.txt` ni yangilang.
-- So'ngra `pandoc` bilan `.pdf` qayta yarating.
-- 3 tilda ham izchil bo'lsin.
-
-Agar topshiriq **"yangi til qo'sh"** bo'lsa (masalan `ar/`):
-- `uz/` ni nusxalab `ar/` yarating, matnlarni tarjima qiling.
-- `sitemap.xml` ga qo'shing.
-- `hreflang` linklarini barcha 4 tilga yangilang.
-- `lang-switch` bayroqchasini qo'shing.
-
-**Har bir o'zgarishdan keyin:** `php -S localhost:8000` da 3 tilni brauzerda ochib, JS konsol xatolarini tekshiring.
+| `README.md` | deploy, Apache/Nginx, API token |
+| `tz.md` | joriy holat, backlog, acceptance va keyingi qadamlar |
+| `tz_master.md` | uzoq muddatli reja, arxitektura, API kontrakti va hosting |
+| `content/locales.js`, `components/Home.jsx`, `components/ProjectsPage.jsx` | bosh sahifa va loyihalar ro‘yxati matni/interaktivligi |
+| `components/ProjectDetail.jsx`, `app/(site)/[locale]/projects/[slug]/page.js` | project detail render, API refresh va SEO |
+| `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql` | MySQL sxema, seed va eski baza migratsiyasi |
+| `backend/config.php`, `backend/content.php` | content API va DB sozlamalari |
+| `backend/admin.php`, `backend/mailer.php` | admin auth/session/CRUD; email delivery |
+| `app/admin/`, `components/admin/`, `css/admin.css` | admin UI |
+| `SECURITY.md` | top 20 xavfsizlik nazorati va cPanel checklist |
+| `css/portfolio.css`, `js/portfolio.js` | umumiy CSS; legacy JS |
+| `files/sardorbek-otaboyev-cv-{uz,ru,en}.txt` | CV manba (PDF pandoc bilan) |
