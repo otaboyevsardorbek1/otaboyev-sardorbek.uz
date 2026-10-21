@@ -1,6 +1,11 @@
 <?php
 // Compatible with PHP 7.1
 
+// Do not expose stack traces or paths on production responses.
+if (getenv('APP_ENV') !== 'local') {
+    ini_set('display_errors', '0');
+}
+
 // Parse the URL part to be proxied
 $url = str_replace('/' . basename(__FILE__), '', $_SERVER['REQUEST_URI']);
 $requestMethod = $_SERVER["REQUEST_METHOD"]; // get the request method
@@ -11,11 +16,26 @@ $contentType = '';
 $response = '';
 
 if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    header('Access-Control-Allow-Origin: *');
-    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Api-Token');
+    $optionsPath = parse_url(isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/', PHP_URL_PATH);
+    if (strpos((string) $optionsPath, '/admin') === false) {
+        header('Access-Control-Allow-Origin: *');
+        header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+        header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Api-Token, Authorization');
+    }
     http_response_code(204);
     exit;
+}
+
+function getApiRequestPath(): string
+{
+    $requestUri = $_SERVER['REQUEST_URI'] ?? '/';
+    $path = parse_url($requestUri, PHP_URL_PATH) ?: '/';
+
+    if (strpos($path, '/' . basename(__FILE__)) !== false) {
+        $path = str_replace('/' . basename(__FILE__), '', $path);
+    }
+
+    return '/' . trim($path, '/');
 }
 
 function getConfiguredApiToken(): string
@@ -33,17 +53,24 @@ function getRequestApiToken(): ?string
 {
     $candidates = [
         'HTTP_X_API_TOKEN',
-        'HTTP_X_API_TOKEN',
         'REDIRECT_HTTP_X_API_TOKEN',
+        'HTTP_AUTHORIZATION',
         'X_API_TOKEN',
     ];
 
     foreach ($candidates as $key) {
-        if (isset($_SERVER[$key])) {
-            $token = trim((string) $_SERVER[$key]);
-            if ($token !== '') {
-                return $token;
-            }
+        if (!isset($_SERVER[$key])) {
+            continue;
+        }
+
+        $value = trim((string) $_SERVER[$key]);
+
+        if ($key === 'HTTP_AUTHORIZATION' && preg_match('/Bearer\s+(.+)/i', $value, $matches)) {
+            $value = trim($matches[1]);
+        }
+
+        if ($value !== '') {
+            return $value;
         }
     }
 
@@ -279,7 +306,6 @@ function handleFormSubmission()
     $isValid = false;
     $response = false;
 
-    // Define constants for attribute IDs
     define('ATTRIBUTE_CAPTCHA_TYPE', 127);
     define('ATTRIBUTE_CAPTCHA_TURNSTILE_SECRET', 130);
 
@@ -292,10 +318,7 @@ function handleFormSubmission()
         return ['Form payload is missing', ['http_code' => 400]];
     }
 
-    $json = curl(
-        sprintf('%s/website/elements/%s', $apiHost, rawurlencode($formId))
-    );
-
+    $json = curl(sprintf('%s/website/elements/%s', $apiHost, rawurlencode($formId)));
     if (!$json) {
         return ['Could not load form configuration', ['http_code' => 400]];
     }
@@ -328,34 +351,30 @@ function handleFormSubmission()
 
         if (is_array($fieldData)) {
             if (isset($fieldData['hash']) && isset($fieldData['text'])) {
-                $clean = strtoupper(trim((string)$fieldData['text']));
+                $clean = strtoupper(trim((string) $fieldData['text']));
                 $hashedText = hash('sha256', $clean);
                 if ($hashedText !== $fieldData['hash']) {
                     $isValid = false;
                     $httpCode = 400;
                     $response = 'Wrong security code';
                     break;
-                } else {
-                    $isValid = true;
-                    $httpCode = 200;
-                    $response = sprintf(
-                        '<div class="wv-message wv-success">%s</div>',
-                        $formConfig['form']['successMessage']
-                    );
                 }
+
+                $isValid = true;
+                $httpCode = 200;
+                $response = sprintf('<div class="wv-message wv-success">%s</div>', $formConfig['form']['successMessage']);
             }
         } elseif ($isTurnstileCaptcha) {
-
             $captchaResponse = $fieldData;
-            $data = http_build_query([
-                'secret'   => $turnstileCaptchaSecret,
-                'response' => $captchaResponse
+            $payload = http_build_query([
+                'secret' => $turnstileCaptchaSecret,
+                'response' => $captchaResponse,
             ]);
 
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, 'https://challenges.cloudflare.com/turnstile/v0/siteverify');
             curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
@@ -364,8 +383,7 @@ function handleFormSubmission()
             curl_close($ch);
 
             $responseCaptcha = json_decode($result, true);
-
-            if (!$responseCaptcha['success'] && !empty($responseCaptcha['error-codes'])) {
+            if (is_array($responseCaptcha) && !($responseCaptcha['success'] ?? false) && !empty($responseCaptcha['error-codes']) && is_array($responseCaptcha['error-codes'])) {
                 $isValid = false;
                 $httpCode = 400;
                 $response = 'Captcha validation failed: ' . implode(', ', $responseCaptcha['error-codes']);
@@ -381,10 +399,7 @@ function handleFormSubmission()
 
             $isValid = true;
             $httpCode = 200;
-            $response = sprintf(
-                '<div class="wv-message wv-success">%s</div>',
-                $formConfig['form']['successMessage']
-            );
+            $response = sprintf('<div class="wv-message wv-success">%s</div>', $formConfig['form']['successMessage']);
         }
     }
 
@@ -392,13 +407,12 @@ function handleFormSubmission()
         $formFieldsConfig = $formConfig['children'];
         list($data, $attachments) = getFormData($formId, $formFieldsConfig);
 
-        if ($formConfig['form']['webhookUrl']) {
+        if (!empty($formConfig['form']['webhookUrl'])) {
             pushWebhook($formConfig, $data, $attachments);
         }
 
-        if ($formConfig['form']['redirectTo'] && is_string($formConfig['form']['redirectTo'])) {
+        if (!empty($formConfig['form']['redirectTo']) && is_string($formConfig['form']['redirectTo'])) {
             $response = '<script type="text/javascript">window.setTimeout(function() { window.location.href=' . json_encode($formConfig['form']['redirectTo']) . '; }, 1000);</script>';
-            $httpCode = 200;
         }
 
         if ($sendMail) {
@@ -409,7 +423,7 @@ function handleFormSubmission()
         }
     }
 
-    return [$response, ['http_code' => $httpCode]];
+    return [$response ?: 'Processing...', ['http_code' => $httpCode]];
 }
 
 function pushWebhook($formConfig, array $data, array $attachments)
@@ -426,62 +440,46 @@ function pushWebhook($formConfig, array $data, array $attachments)
     }
 
     $payload = http_build_query([
-        'data'         => json_encode($data),
-        'form_id'      => $formId,
-        'form_name'    => $formName,
+        'data' => json_encode($data),
+        'form_id' => $formId,
+        'form_name' => $formName,
         'submitted_at' => date('r')
     ]);
 
     $ch = curl_init($formConfig['form']['webhookUrl']);
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
     curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt(
-        $ch,
-        CURLOPT_HTTPHEADER,
-        ['Content-Length: ' . strlen($payload)]
-    );
-
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Length: ' . strlen($payload)]);
     curl_exec($ch);
+    curl_close($ch);
 }
 
 function forwardToApi($url, $requestMethod, $postData = null)
 {
     $apiHost = 'https://api.sitehub.io';
-    // Check if the request has a content type header
-    if (isset($_SERVER["CONTENT_TYPE"])) {
-        // Parse the content type and get the type and charset
-        $contentTypeParts = explode(';', $_SERVER["CONTENT_TYPE"]);
+    $contentType = 'application/x-www-form-urlencoded';
+
+    if (isset($_SERVER['CONTENT_TYPE'])) {
+        $contentTypeParts = explode(';', $_SERVER['CONTENT_TYPE']);
         $contentType = $contentTypeParts[0];
     }
 
-    // Set the Sitejet API endpoint
     $apiUrl = (strpos($url, '/images') === 0 ? 'https://inter-cdn.com' : $apiHost) . $url;
-
-    // Open the cURL session
     $ch = curl_init();
-
-    // Set the cURL options
     curl_setopt($ch, CURLOPT_URL, $apiUrl);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
 
-    // Set the request method
-    if ($requestMethod == "POST") {
+    if ($requestMethod === 'POST') {
         $postData = $postData ?: $_POST;
-        curl_setopt($ch, CURLOPT_POST, true); // sets the request method to POST
-
-        // Check the content type and set the appropriate option for cURL
+        curl_setopt($ch, CURLOPT_POST, true);
         switch ($contentType) {
-            case "application/json":
+            case 'application/json':
                 curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json; charset=UTF-8']);
-                curl_setopt(
-                    $ch,
-                    CURLOPT_POSTFIELDS,
-                    file_get_contents('php://input')
-                ); // set the JSON content in the body
+                curl_setopt($ch, CURLOPT_POSTFIELDS, file_get_contents('php://input'));
                 break;
-            case "multipart/form-data":
+            case 'multipart/form-data':
                 curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
                 break;
             default:
@@ -490,15 +488,9 @@ function forwardToApi($url, $requestMethod, $postData = null)
         }
     }
 
-    // Execute the cURL request
     $response = curl_exec($ch);
-
-    // Get the response headers and status code
     $headers = curl_getinfo($ch);
-
-    // Close the cURL session
     curl_close($ch);
-
     return [$response, $headers];
 }
 
@@ -512,11 +504,58 @@ function curl($url)
     return $return;
 }
 
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Api-Token');
+$requestPath = getApiRequestPath();
 
-if (preg_match('#^/websites/?$#', $url)) {
+if (strpos($requestPath, '/admin') !== 0) {
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Api-Token, Authorization');
+}
+
+if ($requestPath === '/form_container/submit' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $result = handleFormSubmission();
+    $body = $result[0] ?? 'Processing...';
+    $code = (int) ($result[1]['http_code'] ?? 200);
+
+    header('Content-Type: text/html; charset=utf-8');
+    http_response_code($code);
+    echo is_string($body) ? $body : json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if ($requestPath === '/websites' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    header('Content-Type: application/json; charset=utf-8');
+    if (!verifyApiToken()) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Invalid or missing API token'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    echo json_encode([
+        'status' => 'ok',
+        'site' => 'otaboyev-sardorbek.uz',
+        'token_ok' => true,
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if ($requestPath === '/health' || $requestPath === '/status') {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['status' => 'ok'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if (strpos($requestPath, '/admin') === 0) {
+    require __DIR__ . '/backend/admin.php';
+    exit;
+}
+
+if ($requestPath === '/profile' || $requestPath === '/projects' || preg_match('#^/projects/[a-z0-9-]+/?$#', $requestPath)) {
+    require __DIR__ . '/backend/content.php';
+    exit;
+}
+
+if (preg_match('#^/websites/?$#', $requestPath)) {
     if (!verifyApiToken()) {
         http_response_code(401);
         header('Content-Type: application/json; charset=utf-8');
@@ -528,41 +567,19 @@ if (preg_match('#^/websites/?$#', $url)) {
     echo json_encode([
         'status' => 'ok',
         'websites' => [
-            [
-                'id' => 'portfolio-uz',
-                'name' => 'Sardorbek Otaboyev Portfolio',
-                'lang' => 'uz',
-                'url' => 'https://otaboyev-sardorbek.uz/uz/',
-                'active' => true,
-            ],
-            [
-                'id' => 'portfolio-ru',
-                'name' => 'Sardorbek Otaboyev Portfolio',
-                'lang' => 'ru',
-                'url' => 'https://otaboyev-sardorbek.uz/ru/',
-                'active' => true,
-            ],
-            [
-                'id' => 'portfolio-en',
-                'name' => 'Sardorbek Otaboyev Portfolio',
-                'lang' => 'en',
-                'url' => 'https://otaboyev-sardorbek.uz/en/',
-                'active' => true,
-            ],
+            ['id' => 'portfolio-uz', 'name' => 'Sardorbek Otaboyev Portfolio', 'lang' => 'uz', 'url' => 'https://otaboyev-sardorbek.uz/uz/', 'active' => true],
+            ['id' => 'portfolio-ru', 'name' => 'Sardorbek Otaboyev Portfolio', 'lang' => 'ru', 'url' => 'https://otaboyev-sardorbek.uz/ru/', 'active' => true],
+            ['id' => 'portfolio-en', 'name' => 'Sardorbek Otaboyev Portfolio', 'lang' => 'en', 'url' => 'https://otaboyev-sardorbek.uz/en/', 'active' => true],
         ],
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
-if ($requestMethod == 'POST' && strpos($url, '/form_container/submit') !== false) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && strpos($requestPath, '/form_container/submit') !== false) {
     list($response, $headers) = handleFormSubmission();
 } else {
-    list($response, $headers) = forwardToApi($url, $requestMethod);
-
-    // Set the content type based on the response headers
-    $contentType = $headers['content_type'] ? $headers['content_type'] : 'text/plain';
-
-    // Set the response headers for the client
+    list($response, $headers) = forwardToApi($requestPath, $_SERVER['REQUEST_METHOD']);
+    $contentType = $headers['content_type'] ?? 'text/plain';
     header('Content-Type: ' . $contentType);
 
     $cdnHosts = [
@@ -587,7 +604,7 @@ if ($requestMethod == 'POST' && strpos($url, '/form_container/submit') !== false
 }
 
 if (isset($headers['http_code'])) {
-    http_response_code($headers['http_code']);
+    http_response_code((int) $headers['http_code']);
 }
-// Output the response to the client
+
 echo $response;

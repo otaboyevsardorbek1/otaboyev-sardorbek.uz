@@ -470,12 +470,20 @@ img { max-width: 100%; display: block; }
   margin-bottom: 26px;
 }
 
-.section-head h2 {
+.section-head h2,
+.section-head h1 {
   position: relative;
   display: inline-block;
 }
 
-.section-head h2::before {
+.section-head h1 {
+  margin: 8px 0 0;
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  letter-spacing: -0.05em;
+}
+
+.section-head h2::before,
+.section-head h1::before {
   content: "";
   position: absolute;
   left: 0;
@@ -582,6 +590,7 @@ img { max-width: 100%; display: block; }
 
 .feature-card h3,
 .project-card h3,
+.project-card h2,
 .contact-card h3 {
   margin: 0 0 10px;
   font-size: 1.2rem;
@@ -947,6 +956,29 @@ img { max-width: 100%; display: block; }
 
 .cv-button {
   margin-top: 18px;
+}
+
+.cv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.cv-actions .cv-button {
+  margin-top: 0;
+}
+
+.cv-alt-link {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.cv-alt-link:hover {
+  color: var(--accent);
 }
 
 .contact-links {

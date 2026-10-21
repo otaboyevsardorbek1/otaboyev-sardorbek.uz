@@ -49,12 +49,16 @@ document.addEventListener('DOMContentLoaded', function () {
         status.textContent = 'Sending message...';
       }
 
-      fetch(form.action || '/api.php/form_container/submit', {
+      const targetUrl = (form.action && form.action.trim()) || '/api.php/form_container/submit';
+
+      fetch(targetUrl, {
         method: 'POST',
         body: formData,
         headers: {
-          Accept: 'text/html,application/json'
-        }
+          Accept: 'text/html,application/json',
+          'X-Api-Token': 'otaboyev-dev-token'
+        },
+        credentials: 'same-origin'
       })
         .then(function (response) {
           return response.text().then(function (text) {
@@ -225,19 +229,28 @@ document.addEventListener('DOMContentLoaded', function () {
     const profileName = document.getElementById('profile-name');
     const profileRole = document.getElementById('profile-role');
 
+    const setLabeledText = function (element, label, value) {
+      if (!element) return;
+      element.textContent = '';
+      const strong = document.createElement('strong');
+      strong.textContent = `${label}:`;
+      element.appendChild(strong);
+      element.appendChild(document.createTextNode(` ${value}`));
+    };
+
     if (emailLink) {
       emailLink.href = `mailto:${resolvedProfile.email}`;
-      emailLink.innerHTML = `<strong>Email:</strong> ${resolvedProfile.email}`;
+      setLabeledText(emailLink, 'Email', resolvedProfile.email);
     }
 
     if (githubLink) {
       githubLink.href = resolvedProfile.github;
-      githubLink.innerHTML = `<strong>GitHub:</strong> ${resolvedProfile.github.replace('https://', '')}`;
+      setLabeledText(githubLink, 'GitHub', resolvedProfile.github.replace('https://', ''));
     }
 
     if (telegramLink) {
       telegramLink.href = resolvedProfile.telegram;
-      telegramLink.innerHTML = `<strong>Telegram:</strong> ${resolvedProfile.telegramHandle}`;
+      setLabeledText(telegramLink, 'Telegram', resolvedProfile.telegramHandle);
     }
 
     if (quickProfile) {
@@ -361,19 +374,22 @@ document.addEventListener('DOMContentLoaded', function () {
 
       const items = cleanedRepos.length ? cleanedRepos : fallbackRepos;
 
-      repoListNode.innerHTML = items
-        .map(function (repo) {
-          const label = formatRepoLabel(repo.name || 'Project');
-          const stars = repo.stargazers_count || 0;
-          const lang = repo.language || 'Code';
-          return `
-            <div class="repo-item">
-              <strong>${label}</strong>
-              <div class="repo-meta">⭐ ${stars} • ${lang}</div>
-            </div>
-          `;
-        })
-        .join('');
+      repoListNode.textContent = '';
+      items.forEach(function (repo) {
+        const row = document.createElement('div');
+        row.className = 'repo-item';
+
+        const strong = document.createElement('strong');
+        strong.textContent = formatRepoLabel(repo.name || 'Project');
+
+        const meta = document.createElement('div');
+        meta.className = 'repo-meta';
+        meta.textContent = `⭐ ${repo.stargazers_count || 0} • ${repo.language || 'Code'}`;
+
+        row.appendChild(strong);
+        row.appendChild(meta);
+        repoListNode.appendChild(row);
+      });
     };
 
     if (repoListNode) {

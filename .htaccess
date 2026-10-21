@@ -1,5 +1,6 @@
 Options -Indexes
 DirectoryIndex index.html
+AcceptPathInfo On
 
 RewriteEngine On
 
@@ -19,20 +20,28 @@ RewriteRule ^uz/?$ /uz/index.html [L]
 RewriteRule ^ru/?$ /ru/index.html [L]
 RewriteRule ^en/?$ /en/index.html [L]
 
-# Preserve localized project detail routes
-RewriteRule ^uz/projects/([^/]+)/?$ /uz/projects/$1/index.html [L]
-RewriteRule ^ru/projects/([^/]+)/?$ /ru/projects/$1/index.html [L]
-RewriteRule ^en/projects/([^/]+)/?$ /en/projects/$1/index.html [L]
+# Project detail and listing folders already contain index.html, so Apache's
+# DirectoryIndex serves them directly. Do not add per-slug rewrite rules here:
+# in .htaccess context they re-run and can loop on /<locale>/projects/<slug>/.
+# Projects created in the admin panel do not have a generated static page yet;
+# route only those unknown slugs to the client-rendered fallback route.
+RewriteCond %{REQUEST_FILENAME}/index.html !-f
+RewriteCond %{REQUEST_URI} ^/(uz|en|ru)/projects/([a-z0-9-]+)/?$
+RewriteRule ^(uz|en|ru)/projects/([a-z0-9-]+)/?$ /$1/projects/view/?slug=$2 [L,QSA]
 
-# Friendly fallback for project detail nested routes if present
-RewriteRule ^uz/projects/([^/]+)/(.+)$ /uz/projects/$1/$2 [L]
-RewriteRule ^ru/projects/([^/]+)/(.+)$ /ru/projects/$1/$2 [L]
-RewriteRule ^en/projects/([^/]+)/(.+)$ /en/projects/$1/$2 [L]
-
-# Static asset cache control
-<FilesMatch "\.(css|js|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|eot)$">
+# Static asset cache control. CSS/JS filenames are not content-hashed in the
+# legacy tree, so keep their cache short enough for a deploy to take effect.
+<FilesMatch "\.(css|js)$">
+    Header set Cache-Control "public, max-age=300, must-revalidate"
+</FilesMatch>
+<FilesMatch "\.(png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|eot)$">
     Header set Cache-Control "public, max-age=31536000, immutable"
 </FilesMatch>
+
+# Keep admin routes out of search indexes even if a crawler ignores meta tags.
+<If "%{REQUEST_URI} =~ m#^/admin/#">
+    Header set X-Robots-Tag "noindex, nofollow"
+</If>
 
 # HTML files: short cache to refresh after deploys
 <FilesMatch "\.html$">
@@ -46,11 +55,21 @@ Header always set X-Content-Type-Options "nosniff"
 Header always set X-Frame-Options "SAMEORIGIN"
 Header always set Referrer-Policy "strict-origin-when-cross-origin"
 Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+Header always set Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+Header always set Strict-Transport-Security "max-age=31536000"
+
+# Configuration and source folders must never be served directly.
+<FilesMatch "^(config\.local\.php|config\.local\.js|\.env.*|\.git.*)$">
+    Require all denied
+</FilesMatch>
+RewriteRule ^(backend|database)/ - [F,L]
 
 # Do not allow access to hidden/system files
-RedirectMatch 403 ^/\..*
+RedirectMatch 403 ^/(?!\.well-known/)\..*
 
-# If the requested file or folder doesn't exist, try to serve the root index.html for SPA-like fallback
+# If the requested file or folder doesn't exist, try to serve the root index.html for SPA-like fallback.
+# Never rewrite api.php PATH_INFO routes (for example /api.php/admin/session).
+RewriteCond %{REQUEST_URI} !^/api\.php(/|$)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule . /index.html [L]

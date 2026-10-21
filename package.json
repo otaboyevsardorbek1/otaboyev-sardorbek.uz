@@ -1,0 +1,17 @@
+{
+  "name": "otaboyev-sardorbek-uz",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Portfolio website for Sardorbek Otaboyev",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "postbuild": "node scripts/copy-static.mjs",
+    "check": "php -l api.php && php -l backend/config.php && php -l backend/content.php && php -l backend/admin.php && php -l backend/mailer.php && node --check js/portfolio.js"
+  },
+  "dependencies": {
+    "next": "^16.4.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

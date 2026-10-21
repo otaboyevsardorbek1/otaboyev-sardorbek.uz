@@ -287,3 +287,8 @@ php.ini
 *.intoto.jsonl
 *.sig
 *.sigstore
+
+# Database schema/seed are source files, keep them versioned
+!database/schema.sql
+!database/seed.sql
+!database/migrate-project-sections.sql
