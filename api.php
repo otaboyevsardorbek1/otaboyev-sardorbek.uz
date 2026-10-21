@@ -13,7 +13,8 @@ $response = '';
 
 if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     $optionsPath = parse_url(isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/', PHP_URL_PATH);
-    if (strpos((string) $optionsPath, '/admin') === false) {
+    $sensitiveOptionsPath = preg_match('#/api\.php/(websites|bot/webhook)/?$#', (string) $optionsPath);
+    if (strpos((string) $optionsPath, '/admin') === false && !$sensitiveOptionsPath) {
         header('Access-Control-Allow-Origin: *');
         header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
         header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Api-Token, Authorization');
@@ -649,7 +650,7 @@ function handleFormRequest()
 
 $requestPath = getApiRequestPath();
 
-if (strpos($requestPath, '/admin') !== 0) {
+if (strpos($requestPath, '/admin') !== 0 && $requestPath !== '/websites' && $requestPath !== '/bot/webhook') {
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Api-Token, Authorization');
@@ -685,6 +686,12 @@ if ($requestPath === '/websites' && $_SERVER['REQUEST_METHOD'] === 'GET') {
 if ($requestPath === '/health' || $requestPath === '/status') {
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['status' => 'ok'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if ($requestPath === '/bot/webhook') {
+    require __DIR__ . '/backend/bot.php';
+    bot_handle_webhook();
     exit;
 }
 

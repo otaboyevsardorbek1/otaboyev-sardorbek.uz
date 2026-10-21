@@ -21,11 +21,23 @@ return array(
         'telegram_bot_username' => 'YourAdminBot',
         'telegram_id' => '123456789',
         'email' => 'admin@otaboyev-sardorbek.uz',
+        'phone' => '+998900000000',
         'session_ttl' => 43200,
         'challenge_ttl' => 600,
         'otp_max_attempts' => 5,
         'telegram_auth_window' => 300,
         'trust_proxy' => false,
+    ),
+
+    // Private Telegram email bridge. Generate webhook_secret with:
+    // php -r "echo bin2hex(random_bytes(32));"
+    'bot' => array(
+        'webhook_secret' => '',
+        'imap_host' => 'panel2.eskiz.uz',
+        'imap_port' => 993,
+        'imap_user' => 'admin@otaboyev-sardorbek.uz',
+        'imap_pass' => '',
+        'imap_ssl' => true,
     ),
 
     // Email delivery: mail, smtp, resend or brevo.
