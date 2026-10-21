@@ -97,6 +97,7 @@ Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `display_errors` productionda o‘ch
 - [x] Telegram bot webhook secret + numeric admin ID allowlist; `pending_update_count=0`.
 - [x] Bot IMAP `panel2.eskiz.uz:993/imap/ssl`; cPanel `mail()` orqali `/send` yetkazilgan.
 - [ ] Haqiqiy Telegram admin xabari bilan inbound webhook testi (fake update bilan sinalgan).
+- [x] SSH key passphrase rotated 2026-10-22; new value repo tashqarisida, mode 600.
 
 ## Incident response
 
