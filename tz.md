@@ -42,6 +42,7 @@ None. Migration and documentation are committed and pushed. The next action is p
 - React listing pages at `/{uz,en,ru}/projects/` with theme persistence, mobile nav, language switcher and project cards.
 - MySQL schema/seed and content API tested for uz/en/ru, invalid `lang`, missing slug and DB 503.
 - Contact form posts to the public endpoint without sending an unused API token.
+- GitHub Actions workflow runs `npm ci`, PHP/JS lint, static build and export-file checks on push/PR.
 - Project detail migration: React routes, `ProjectDetail.jsx`, API refresh, `results`/`stack_notes`, admin fields, seed/migration SQL and Apache fallback for new slugs.
 - Admin panel: Telegram HMAC + email OTP, hashed one-time codes, HttpOnly/Secure/SameSite cookies, CSRF, rate limits, audit log and 3-language profile/project CRUD.
 - Apache checks: admin PATH_INFO is not caught by the fallback, `backend/`/`database/`/`config.local.php` are denied, and known + admin-created detail URLs return 200.
@@ -59,7 +60,6 @@ None. Migration and documentation are committed and pushed. The next action is p
 | P3 | Generic detail route serves listing metadata/canonical until JS runs | `app/(site)/[locale]/projects/view/page.js` | Add static/generic metadata strategy or accept the JS-only correction |
 | P3 | Unknown URLs go to `/index.html` instead of a real 404 | `.htaccess` | Accept the SPA-like fallback or add a real 404 page |
 | P3 | `database/migrate-project-sections.sql` is a one-time, non-idempotent migration | `database/migrate-project-sections.sql` | Add an idempotent migration runner if the schema changes again |
-| P3 | No CI pipeline; checks are manual | repo root | Add a small workflow for `npm ci`, `npm run check`, `npm run build` and PHP lint |
 | P3 | Legacy HTML, `js/portfolio.js`, empty `README` and `CodeAnalyzer_v2.py` create noise | repo root / legacy pages | Remove or archive only with owner approval; never edit Sitejet artifacts casually |
 
 Anything that changes visible content, metadata or links must be applied to `uz`, `en` and `ru` in the same change.
