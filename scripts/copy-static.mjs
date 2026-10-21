@@ -15,6 +15,7 @@ const copies = [
   ['favicon.svg', 'favicon.svg'],
   ['api.php', 'api.php'],
   ['backend', 'backend'],
+  ['config.local.php', 'config.local.php'],
   ['.htaccess', '.htaccess'],
   ['sitemap.xml', 'sitemap.xml'],
 ];
