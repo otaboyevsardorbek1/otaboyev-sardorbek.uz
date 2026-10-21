@@ -12,19 +12,19 @@ Oxirgi audit: **2026-10-21**. Joriy ish va backlog — [tz.md](tz.md), uzoq mudd
 | Next dev server | `npm run dev` — API yo‘q; frontend statik fallback bilan ishlaydi |
 | Static export | `npm run build` → `out/`; postbuild `files/`, `js/`, `css/`, `favicon.svg`, `api.php`, `backend/`, mavjud bo‘lsa `config.local.php`, `.htaccess`, `sitemap.xml` ni ko‘chiradi |
 | CI | `.github/workflows/ci.yml` — push/PR’da `npm ci`, `npm run check`, `npm run build` va export fayllarini tekshiradi |
-| Export preview | `DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out` |
+| Export preview | `APP_ENV=local SITE_URL=http://127.0.0.1:8000 DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out` |
 | Sintaksis tekshiruvi | `npm run check` — `php -l api.php`, backend fayllari, `node --check js/portfolio.js`; JSX ni `npm run build` tekshiradi |
 | API health | `curl -s http://127.0.0.1:8000/api.php/health` |
 | Content API | `curl -s "http://127.0.0.1:8000/api.php/profile?lang=uz"` · `/api.php/projects?lang=uz` · `/api.php/projects/gitinsight?lang=uz` |
 | Admin config | `curl -s http://127.0.0.1:8000/api.php/admin/config` |
-| Tokenli endpoint | `curl -H "X-Api-Token: otaboyev-dev-token" http://127.0.0.1:8000/api.php/websites` |
+| Tokenli endpoint | `curl -H "X-Api-Token: $API_TOKEN" http://127.0.0.1:8000/api.php/websites` (lokalda `APP_ENV=local` bilan dev token ham ishlaydi) |
 | DB (yangi) | `mysql -u USER -p DB_NAME < database/schema.sql` → `mysql -u USER -p DB_NAME < database/seed.sql` |
 | DB (eski) | Avval `database/migrate-project-sections.sql`, keyin `database/migrate-contact-messages.sql`; `database/seed.sql` faqat standart kontentni qayta yozish kerak bo‘lsa import qilinadi (mavjud admin kontenti o‘chadi) |
 | CV PDF | `pandoc files/sardorbek-otaboyev-cv-<lang>.txt -o files/sardorbek-otaboyev-cv-<lang>.pdf -V geometry:margin=2cm --pdf-engine=xelatex -V mainfont="DejaVu Sans Mono"` |
 
 **Deploy:** cPanel’da MySQL DB yaratiladi, `config.local.php` yoziladi (yoki `DB_*` env beriladi), `npm ci && npm run build`, so‘ng `out/` tarkibi web rootga ko‘chiriladi. `out/` ichida `api.php`, `backend/`, `.htaccess`, `files/`, `sitemap.xml` bor. Production uchun HTTPS, haqiqiy DB, `APP_SECRET`, Telegram bot/ID va email sozlamalari majburiy. Web rootdagi `sitemap.xml` PHP jarayoni yoza olishi kerak (admin proyekt saqlaganda avtomatik yangilanadi); yozib bo‘lmasa admin panelida ogohlantirish chiqadi.
 
-**Muhim:** PHP built-in server `.htaccess` ni o‘qimaydi. Rewrite/redirect xatti-harakatini Apache’da alohida tekshir. Apache’da `/api.php/admin/...` route’lari ishlashi, `config.local.php`/`backend/`/`database/` 403 bo‘lishi, project detail URL’lari 200 va noma’lum URL’lar `404.html` bilan 404 bo‘lishi tekshirilgan. Nginx uchun `.htaccess` o‘rniga ekvivalent `try_files`/rewrite va `error_page 404 /404.html` kerak.
+**Muhim:** PHP built-in server `.htaccess` ni o‘qimaydi. Rewrite/redirect xatti-harakatini Apache’da alohida tekshir. Apache’da `/api.php/admin/...` route’lari ishlashi, `config.local.php`/`github_keys.txt`/`backend/`/`database/` 403 bo‘lishi, project detail URL’lari 200 va noma’lum URL’lar `404.html` bilan 404 bo‘lishi tekshirilgan. Nginx uchun `.htaccess` o‘rniga ekvivalent `try_files`/rewrite va `error_page 404 /404.html` kerak.
 
 ## Arxitektura
 
@@ -82,7 +82,7 @@ Envelope: `{status:"ok",data:...}` yoki `{status:"error",message,code}`.
 - `GET /api.php/websites` — `X-Api-Token` yoki `Authorization: Bearer`; noto‘g‘ri bo‘lsa 401.
 - `POST /api.php/form_container/submit` — contact form, token talab qilmaydi; `id=contact` native handler orqali `contact_messages`ga saqlanadi (validatsiya, `website` honeypot va IP bo‘yicha 10 daqiqada 5 ta limit). Boshqa `id`lar `form_<id>[ed-f-N]` Sitejet contractiga uzatiladi.
 - Boshqa yo‘llar `https://api.sitehub.io` ga proxy; `/images*` → `https://inter-cdn.com`.
-- Token tartibi: `API_TOKEN` → `SITEHUB_API_TOKEN` → `OTABOYEV_API_TOKEN`; dev fallback `otaboyev-dev-token` (productionda env majburiy).
+- Token tartibi: `API_TOKEN` → `SITEHUB_API_TOKEN` → `OTABOYEV_API_TOKEN`; `otaboyev-dev-token` fallback faqat `APP_ENV=local|development|test` bo‘lganda, productionda esa haqiqiy env token majburiy.
 - `api.php` va `backend/*.php` “Compatible with PHP 7.1” — arrow fn, typed properties va boshqa 7.4+ sintaksisni qo‘shmang.
 
 ### Ma’lumotlar bazasi
@@ -122,7 +122,7 @@ Matn o‘zgarsa — 3 tilda ham. `id`, `class`, `name`, `data-*` tarjima qilinma
 
 1. `npm run check`.
 2. `npm run build` — xatosiz export + postbuild copy.
-3. Test DB bilan: `DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out`.
+3. Test DB bilan: `APP_ENV=local SITE_URL=http://127.0.0.1:8000 DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out`.
 4. `/uz/`, `/en/`, `/ru/` + bitta ma’lum detail; Apache’da admin yaratgan slug `/uz/projects/<slug>/` fallback’i; F12 → Console/Network’da kutilmagan 404, CORS yoki hydration xatosi yo‘qligi.
 5. API: profile/projects/detail (uz/en/ru, invalid lang, 404 slug, DB yo‘q → 503).
 6. Contact formani yuborib ko‘r (Network’da `/api.php/form_container/submit`); DB’da `contact_messages` yozuvi, admin panelda xabar, `website` honeypot va 6-chi so‘rovda `429` tekshiriladi.

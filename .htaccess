@@ -5,13 +5,17 @@ ErrorDocument 404 /404.html
 
 RewriteEngine On
 
-# Force HTTPS in production
-# RewriteCond %{HTTPS} !=on
-# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+# Force HTTPS in production, but keep local development hosts on HTTP.
+# The canonical host is hard-coded so an arbitrary Host header cannot turn
+# this into an open redirect. Respect a trusted proxy's forwarded proto.
+RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?$ [NC]
+RewriteCond %{HTTPS} !=on [NC]
+RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
+RewriteRule ^ https://otaboyev-sardorbek.uz%{REQUEST_URI} [L,R=301]
 
-# Redirect www to non-www
-# RewriteCond %{HTTP_HOST} ^www\.(.*)$ [NC]
-# RewriteRule ^(.*)$ https://%1/$1 [R=301,L]
+# Redirect www and alternate hosts to the canonical HTTPS host.
+RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1|\[::1\]|otaboyev-sardorbek\.uz)(:[0-9]+)?$ [NC]
+RewriteRule ^ https://otaboyev-sardorbek.uz%{REQUEST_URI} [L,R=301]
 
 # Serve the locale homepage as the root default
 RewriteRule ^$ /index.html [L]
@@ -40,7 +44,7 @@ RewriteRule ^(uz|en|ru)/projects/([a-z0-9-]+)/?$ /$1/projects/view/?slug=$2 [L,Q
 </FilesMatch>
 
 # Keep admin routes out of search indexes even if a crawler ignores meta tags.
-<If "%{REQUEST_URI} =~ m#^/admin/#">
+<If "%{REQUEST_URI} =~ m#^/(admin/|api\.php/admin)#">
     Header set X-Robots-Tag "noindex, nofollow"
 </If>
 
@@ -59,11 +63,12 @@ Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
 Header always set Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
 Header always set Strict-Transport-Security "max-age=31536000"
 
-# Configuration and source folders must never be served directly.
-<FilesMatch "^(config\.local\.php|config\.local\.js|\.env.*|\.git.*)$">
+# Configuration, secrets and source folders must never be served directly.
+<FilesMatch "^(config\.local\.php|config\.local\.js|github_keys\.txt|\.env.*|\.git.*|composer\.(json|lock)|package(-lock)?\.json|next\.config\.js|CodeAnalyzer_v2\.py|.*\.(sql|log|bak|md))$">
     Require all denied
 </FilesMatch>
-RewriteRule ^(backend|database)/ - [F,L]
+RewriteRule ^(backend|database|app|components|content|scripts|node_modules)(/|$) - [F,L,NC]
 
-# Do not allow access to hidden/system files
-RedirectMatch 403 ^/(?!\.well-known/)\..*
+# Do not allow access to hidden/system files anywhere in the tree. The ACME
+# challenge directory must remain reachable for certificate renewal.
+RedirectMatch 403 ^/(?!\.well-known(?:/|$))(?:.*/)?\.[^/]*(?:/|$)

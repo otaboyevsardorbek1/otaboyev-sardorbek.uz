@@ -69,7 +69,7 @@ export DB_PASS=secret
 
 ### 3. Preview
 ```bash
-php -S 127.0.0.1:8000 -t out
+APP_ENV=local SITE_URL=http://127.0.0.1:8000 php -S 127.0.0.1:8000 -t out
 ```
 
 Keyin quyidagi manzillarga kiring:
@@ -81,7 +81,7 @@ Keyin quyidagi manzillarga kiring:
 
 `npm run dev` faqat frontend uchun qulay; unda PHP API yo‘q, shuning uchun bosh sahifa statik fallback bilan ishlaydi. API’ni sinash uchun yuqoridagi `php -S ... -t out` ishlatiladi.
 
-Admin API’ni lokalda sinash uchun `APP_SECRET` (64 hex), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `ADMIN_TELEGRAM_ID`, `ADMIN_EMAIL` va `ADMIN_MAIL_DRIVER=log` ni ham bering. Telegram widget lokal HTTP’da ishlamaydi; callback’ni test ma’lumoti bilan `curl` orqali yoki production HTTPS’da sinang. Email kod lokalda `ADMIN_MAIL_LOG` fayliga yoziladi.
+Admin API’ni lokalda sinash uchun `APP_ENV=local`, `SITE_URL=http://127.0.0.1:8000`, `APP_SECRET` (64 hex), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `ADMIN_TELEGRAM_ID`, `ADMIN_EMAIL` va `ADMIN_MAIL_DRIVER=log` ni ham bering. Telegram widget lokal HTTP’da ishlamaydi; callback’ni test ma’lumoti bilan `curl` orqali yoki production HTTPS’da sinang. Email kod lokalda `ADMIN_MAIL_LOG` fayliga yoziladi.
 
 ### API tekshiruvi
 ```bash
@@ -385,18 +385,20 @@ export SITEHUB_API_TOKEN="YOUR_TOKEN"
 export OTABOYEV_API_TOKEN="YOUR_TOKEN"
 ```
 
-Agar hech biri belgilanmagan bo‘lsa, lokal fallback:
+Agar hech biri belgilanmagan bo‘lsa, fallback faqat `APP_ENV=local`, `development` yoki `test` bo‘lganda ishlaydi:
 
 ```bash
-otaboyev-dev-token
+export APP_ENV=local
+export API_TOKEN="otaboyev-dev-token"
 ```
 
-Productionda bu fallback ishlatilmasligi kerak, haqiqiy secret ishlatilishi lozim.
+`APP_ENV=production` (yoki `APP_ENV` umuman yo‘q) bo‘lsa, public dev token qabul qilinmaydi va token sozlanmagan endpoint `401` qaytaradi. Productionda haqiqiy secret ishlatilishi shart.
 
 ## .htaccess funksiyasi
 
 Loyihada root `.htaccess` fayli mavjud bo‘lib, quyidagilarni boshqaradi:
-- hidden fayllar, `config.local.php`, `backend/` va `database/` ga HTTP kirishni cheklash
+- HTTP’ni canonical HTTPS hostga 301 qilish (lokal `localhost`/`127.0.0.1` bundan mustasno)
+- hidden fayllar, `config.local.php`, `github_keys.txt`, `backend/`, `database/`, source papkalar, `.sql`/`.log`/`.md` va nested hidden fayllarga HTTP kirishni cheklash
 - locale redirect`lar`
 - project detail/listing papkalari uchun `DirectoryIndex`; statik sahifasi yo‘q admin slug’lari uchun `/projects/view/?slug=...` fallback rewrite’i (per-slug statik rewrite qo‘shilmaydi, loop bo‘lmaydi)
 - cache headerlar

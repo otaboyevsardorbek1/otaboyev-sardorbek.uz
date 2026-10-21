@@ -8,13 +8,7 @@ if (getenv('APP_ENV') !== 'local') {
 
 require_once __DIR__ . '/backend/contact.php';
 
-// Parse the URL part to be proxied
-$url = str_replace('/' . basename(__FILE__), '', $_SERVER['REQUEST_URI']);
-$requestMethod = $_SERVER["REQUEST_METHOD"]; // get the request method
-$host = $_SERVER['HTTP_HOST'];
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$contentType = '';
-
+$requestMethod = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $response = '';
 
 if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -32,23 +26,36 @@ function getApiRequestPath(): string
 {
     $requestUri = $_SERVER['REQUEST_URI'] ?? '/';
     $path = parse_url($requestUri, PHP_URL_PATH) ?: '/';
+    $apiFile = '/' . basename(__FILE__);
 
-    if (strpos($path, '/' . basename(__FILE__)) !== false) {
-        $path = str_replace('/' . basename(__FILE__), '', $path);
+    // Only strip an exact /api.php prefix. A substring replace would also
+    // turn paths such as /api.phpadmin/... into /admin/... routes.
+    if ($path === $apiFile) {
+        return '/';
+    }
+    if (strpos($path, $apiFile . '/') === 0) {
+        $path = substr($path, strlen($apiFile));
     }
 
     return '/' . trim($path, '/');
 }
 
-function getConfiguredApiToken(): string
+function getConfiguredApiToken(): ?string
 {
     $token = getenv('API_TOKEN') ?: getenv('SITEHUB_API_TOKEN') ?: getenv('OTABOYEV_API_TOKEN');
     if (is_string($token) && trim($token) !== '') {
         return trim($token);
     }
 
-    // Local fallback for development only. Set a real token in the environment on production.
-    return 'otaboyev-dev-token';
+    // The public dev token is never accepted in production. Run local tests
+    // with APP_ENV=local (or set API_TOKEN) instead of relying on this fallback.
+    $config = admin_config();
+    $appEnv = isset($config['app_env']) ? strtolower((string) $config['app_env']) : 'production';
+    if (in_array($appEnv, array('local', 'development', 'test'), true)) {
+        return 'otaboyev-dev-token';
+    }
+
+    return null;
 }
 
 function getRequestApiToken(): ?string
@@ -84,35 +91,90 @@ function verifyApiToken(): bool
     $expected = getConfiguredApiToken();
     $actual = getRequestApiToken();
 
-    if ($actual === null) {
+    if ($expected === null || $actual === null) {
         return false;
     }
 
     return hash_equals($expected, $actual);
 }
 
+function api_clean_header($value, $max = 0)
+{
+    $value = trim(str_replace(array("\r", "\n", "\0"), '', (string) $value));
+    if ($max > 0) {
+        $value = substr($value, 0, $max);
+    }
+    return $value;
+}
+
+function api_valid_http_url($value)
+{
+    $value = (string) $value;
+    if (filter_var($value, FILTER_VALIDATE_URL) === false) {
+        return false;
+    }
+    $scheme = strtolower((string) parse_url($value, PHP_URL_SCHEME));
+    return $scheme === 'http' || $scheme === 'https';
+}
+
+function api_escape_html($value)
+{
+    return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
 function sendFormSummaryByEmail(array $formConfig, array $data, array $attachments)
 {
-    $formId = $formConfig['id'];
-    $destinationEmail = $formConfig['form']['emailTo'] ? $formConfig['form']['emailTo'] : 'host9590@otaboyev-sardorbek.uz';
-    $senderEmail = $formConfig['form']['emailFrom'];
+    if (!isset($formConfig['id'], $formConfig['form']) || !is_array($formConfig['form'])) {
+        return false;
+    }
+
+    $formId = (string) $formConfig['id'];
+    $form = $formConfig['form'];
+    $destinationEmail = api_clean_header(isset($form['emailTo']) ? $form['emailTo'] : '', 320);
+    if ($destinationEmail === '') {
+        $destinationEmail = 'host9590@otaboyev-sardorbek.uz';
+    }
+
+    $recipients = array();
+    foreach (explode(',', $destinationEmail) as $recipient) {
+        $recipient = api_clean_header($recipient, 320);
+        if ($recipient !== '' && filter_var($recipient, FILTER_VALIDATE_EMAIL) !== false) {
+            $recipients[] = $recipient;
+        }
+    }
+    if (!$recipients) {
+        return false;
+    }
+    $destinationEmail = implode(', ', $recipients);
+
+    $senderEmail = api_clean_header(isset($form['emailFrom']) ? $form['emailFrom'] : '', 320);
+    if ($senderEmail !== '' && filter_var($senderEmail, FILTER_VALIDATE_EMAIL) === false) {
+        $senderEmail = '';
+    }
+
     $replyToEmail = null;
-    $subject = $formConfig['form']['emailSubject'];
-    $textHeader = $formConfig['form']['emailText'];
+    $subject = api_clean_header(isset($form['emailSubject']) ? $form['emailSubject'] : '', 200);
+    if ($subject === '') {
+        $subject = 'Form submission';
+    }
+    $textHeader = isset($form['emailText']) ? (string) $form['emailText'] : '';
     $htmlSummary = '';
-    $formData = $_POST['form_' . $formId];
-    $formFieldsConfig = $formConfig['children'];
+    $formData = isset($_POST['form_' . $formId]) && is_array($_POST['form_' . $formId]) ? $_POST['form_' . $formId] : array();
+    $formFieldsConfig = isset($formConfig['children']) && is_array($formConfig['children']) ? $formConfig['children'] : array();
 
     foreach ($formFieldsConfig as $formFieldConfig) {
-        $formItemConfig = $formFieldConfig['formItem'];
+        if (!is_array($formFieldConfig) || !isset($formFieldConfig['id'])) {
+            continue;
+        }
+        $formItemConfig = isset($formFieldConfig['formItem']) && is_array($formFieldConfig['formItem']) ? $formFieldConfig['formItem'] : null;
         $formFieldName = sprintf('ed-f-%d', $formFieldConfig['id']);
-        if ($formItemConfig &&
-            $formItemConfig['type'] == 'email' &&
-            filter_var(
-                $formData[$formFieldName],
-                FILTER_VALIDATE_EMAIL
-            ) !== false) {
-            $replyToEmail = $formData[$formFieldName];
+        if ($formItemConfig
+            && isset($formItemConfig['type'])
+            && $formItemConfig['type'] === 'email'
+            && isset($formData[$formFieldName])
+            && is_scalar($formData[$formFieldName])
+            && filter_var((string) $formData[$formFieldName], FILTER_VALIDATE_EMAIL) !== false) {
+            $replyToEmail = api_clean_header($formData[$formFieldName], 320);
         }
     }
 
@@ -120,95 +182,126 @@ function sendFormSummaryByEmail(array $formConfig, array $data, array $attachmen
         if (is_array($value)) {
             $value = implode(',', $value);
         }
+        $label = api_clean_header($label, 160);
         if (strpos($label, 'ed-f') === 0) {
             $label = '';
         }
-        $htmlSummary .= sprintf('<strong>%s</strong><br />%s<br /><br />', $label, $value);
+        $htmlSummary .= '<strong>' . api_escape_html($label) . '</strong><br />'
+            . nl2br(api_escape_html((string) $value)) . '<br /><br />';
     }
 
     foreach ($attachments as $label => $attachment) {
+        if (!is_array($attachment)) {
+            continue;
+        }
+        $label = api_clean_header($label, 160);
         if (strpos($label, 'ed-f') === 0) {
             $label = '';
         }
-        $htmlSummary .= sprintf('<strong>%s</strong><br />%s<br /><br />', $label, $attachment['name']);
+        $attachmentName = api_clean_header(isset($attachment['name']) ? $attachment['name'] : '', 255);
+        if ($attachmentName === '') {
+            $attachmentName = 'attachment';
+        }
+        $htmlSummary .= '<strong>' . api_escape_html($label) . '</strong><br />'
+            . api_escape_html($attachmentName) . '<br /><br />';
     }
 
     $mailBody = sprintf(
-        "<html><body>%s<br/><br/>%s</body></html>",
-        $textHeader,
+        '<html><body>%s<br/><br/>%s</body></html>',
+        nl2br(api_escape_html($textHeader)),
         $htmlSummary
     );
 
-    //header
-    $headers = "MIME-Version: 1.0\r\n"; // Defining the MIME version
-    if ($senderEmail) {
-        $headers .= "From: $senderEmail" . "\r\n"; // Sender Email
+    $headers = "MIME-Version: 1.0\r\n";
+    if ($senderEmail !== '') {
+        $headers .= 'From: ' . $senderEmail . "\r\n";
     }
-    if ($replyToEmail) {
-        $headers .= "Reply-To: $replyToEmail" . "\r\n"; // Email address to reach back
+    if ($replyToEmail !== null) {
+        $headers .= 'Reply-To: ' . $replyToEmail . "\r\n";
     }
-    if ($formConfig['form']['sendCsv']) {
-        $attachments[] = [
+    if (!empty($form['sendCsv'])) {
+        $attachments[] = array(
             'type' => 'text/csv',
             'name' => 'form-data.csv',
-            'data' => createCsvData($data)
-        ];
+            'data' => createCsvData($data),
+        );
     }
 
     if (count($attachments)) {
-        $boundary = md5("boundary"); // define boundary with a md5 hashed value
-        $headers .= "Content-Type: multipart/mixed;"; // Defining Content-Type
-        $headers .= "boundary = $boundary" . "\r\n"; //Defining the Boundary
+        $boundary = 'b' . bin2hex(random_bytes(16));
+        $headers .= 'Content-Type: multipart/mixed; boundary="' . $boundary . '"' . "\r\n";
 
-        //html
-        $body = "--$boundary\r\n";
-        $body .= "Content-type: text/html; charset=utf-8" . "\r\n";
+        $body = '--' . $boundary . "\r\n";
+        $body .= "Content-Type: text/html; charset=utf-8\r\n";
         $body .= "Content-Transfer-Encoding: base64\r\n\r\n";
         $body .= chunk_split(base64_encode($mailBody));
 
-        //attachment
         foreach ($attachments as $attachment) {
-            $fileType = $attachment['type'];
-            $fileName = $attachment['name'];
+            if (!is_array($attachment)) {
+                continue;
+            }
+            $fileType = api_clean_header(isset($attachment['type']) ? $attachment['type'] : '', 100);
+            if (!preg_match('#^[A-Za-z0-9.+/_-]+$#', $fileType)) {
+                $fileType = 'application/octet-stream';
+            }
+            $fileName = api_clean_header(isset($attachment['name']) ? $attachment['name'] : '', 255);
+            $fileName = str_replace(array('\\', '/', '"'), '', basename($fileName));
+            if ($fileName === '') {
+                $fileName = 'attachment';
+            }
 
-            $fileContent = $attachment['data'] ?? file_get_contents($attachment['tempFile']);
+            if (isset($attachment['data'])) {
+                $fileContent = (string) $attachment['data'];
+            } elseif (isset($attachment['tempFile']) && is_file($attachment['tempFile'])) {
+                $fileContent = (string) file_get_contents($attachment['tempFile']);
+            } else {
+                $fileContent = '';
+            }
             $encodedFileContent = chunk_split(base64_encode($fileContent));
 
-            $body .= "--$boundary\r\n";
-            $body .= "Content-Type: $fileType; name=" . $fileName . "\r\n";
-            $body .= "Content-Disposition: attachment; filename=" . $fileName . "\r\n";
+            $body .= '--' . $boundary . "\r\n";
+            $body .= 'Content-Type: ' . $fileType . '; name="' . $fileName . '"' . "\r\n";
+            $body .= 'Content-Disposition: attachment; filename="' . $fileName . '"' . "\r\n";
             $body .= "Content-Transfer-Encoding: base64\r\n";
-            $body .= "X-Attachment-Id: " . rand(1000, 99999) . "\r\n\r\n";
-            $body .= $encodedFileContent; // Attaching the encoded file with email
+            $body .= 'X-Attachment-Id: ' . bin2hex(random_bytes(8)) . "\r\n\r\n";
+            $body .= $encodedFileContent;
         }
 
         $mailBody = $body;
     } else {
-        $headers .= "Content-type: text/html; charset=utf-8" . "\r\n";
+        $headers .= "Content-Type: text/html; charset=utf-8\r\n";
     }
 
-    return mail($destinationEmail, $subject, $mailBody, $headers, $senderEmail ? "-f $senderEmail" : "");
+    return mail(
+        $destinationEmail,
+        $subject,
+        $mailBody,
+        $headers,
+        $senderEmail !== '' ? '-f ' . $senderEmail : ''
+    );
+}
+
+function csv_safe_cell($value)
+{
+    $value = str_replace("\0", '', (string) $value);
+    if (preg_match('/^[=+\-@\t\r]/', $value)) {
+        $value = "'" . $value;
+    }
+    return '"' . str_replace('"', '""', $value) . '"';
 }
 
 function createCsvData(array $data): string
 {
-    $headers = [];
-    $values = [];
+    $headers = array();
+    $values = array();
     $delimiter = ';';
-    $enclosure = '"';
 
     foreach ($data as $label => $value) {
-        $headers[] = str_replace($enclosure, '\\' . $enclosure, $label);
-        $values[] = str_replace($enclosure, '\\' . $enclosure, is_array($value) ? implode(',', $value) : $value);
+        $headers[] = csv_safe_cell($label);
+        $values[] = csv_safe_cell(is_array($value) ? implode(',', $value) : $value);
     }
 
-    return $enclosure . implode(
-            $enclosure . $delimiter . $enclosure,
-            $headers
-        ) . $enclosure . "\n" . $enclosure . implode(
-            $enclosure . $delimiter . $enclosure,
-            $values
-        ) . $enclosure;
+    return implode($delimiter, $headers) . "\n" . implode($delimiter, $values);
 }
 
 function getFormData($formId, $formFieldsConfig): array
@@ -326,18 +419,22 @@ function handleFormSubmission()
     }
 
     $formConfig = json_decode($json, true);
-    if (!is_array($formConfig) || empty($formConfig['form'])) {
+    if (!is_array($formConfig) || empty($formConfig['form']) || !is_array($formConfig['form'])) {
         return ['Invalid form configuration', ['http_code' => 400]];
     }
+    $formFieldsConfig = isset($formConfig['children']) && is_array($formConfig['children']) ? $formConfig['children'] : array();
 
     $sendMail = $formConfig['form']['sendEmail'] ?? false;
+    $successMessage = isset($formConfig['form']['successMessage'])
+        ? (string) $formConfig['form']['successMessage']
+        : 'Thank you!';
 
     foreach ($_POST['form_' . $formId] as $fieldName => $fieldData) {
         $fieldId = str_replace('ed-f-', '', $fieldName);
         $isTurnstileCaptcha = false;
         $turnstileCaptchaSecret = null;
 
-        foreach ($formConfig['children'] as $formFieldConfig) {
+        foreach ($formFieldsConfig as $formFieldConfig) {
             if ($formFieldConfig['id'] == $fieldId && $formFieldConfig['type'] == 'form-captcha') {
                 $formItemConfig = $formFieldConfig['formItem'];
                 $attributes = $formItemConfig['values'];
@@ -364,7 +461,7 @@ function handleFormSubmission()
 
                 $isValid = true;
                 $httpCode = 200;
-                $response = sprintf('<div class="wv-message wv-success">%s</div>', $formConfig['form']['successMessage']);
+                $response = '<div class="wv-message wv-success">' . api_escape_html($successMessage) . '</div>';
             }
         } elseif ($isTurnstileCaptcha) {
             $captchaResponse = $fieldData;
@@ -388,7 +485,7 @@ function handleFormSubmission()
             if (is_array($responseCaptcha) && !($responseCaptcha['success'] ?? false) && !empty($responseCaptcha['error-codes']) && is_array($responseCaptcha['error-codes'])) {
                 $isValid = false;
                 $httpCode = 400;
-                $response = 'Captcha validation failed: ' . implode(', ', $responseCaptcha['error-codes']);
+                $response = 'Captcha validation failed: ' . api_escape_html(implode(', ', $responseCaptcha['error-codes']));
                 break;
             }
 
@@ -401,12 +498,11 @@ function handleFormSubmission()
 
             $isValid = true;
             $httpCode = 200;
-            $response = sprintf('<div class="wv-message wv-success">%s</div>', $formConfig['form']['successMessage']);
+            $response = '<div class="wv-message wv-success">' . api_escape_html($successMessage) . '</div>';
         }
     }
 
     if ($isValid) {
-        $formFieldsConfig = $formConfig['children'];
         list($data, $attachments) = getFormData($formId, $formFieldsConfig);
 
         // Persist the message for the admin inbox. A missing DB or table must
@@ -417,8 +513,17 @@ function handleFormSubmission()
             pushWebhook($formConfig, $data, $attachments);
         }
 
-        if (!empty($formConfig['form']['redirectTo']) && is_string($formConfig['form']['redirectTo'])) {
-            $response = '<script type="text/javascript">window.setTimeout(function() { window.location.href=' . json_encode($formConfig['form']['redirectTo']) . '; }, 1000);</script>';
+        $redirectTo = isset($formConfig['form']['redirectTo']) ? (string) $formConfig['form']['redirectTo'] : '';
+        $isSafeRelativeRedirect = strpos($redirectTo, '/') === 0
+            && substr($redirectTo, 0, 2) !== '//'
+            && strpos($redirectTo, '\\') === false
+            && !preg_match('/[\\x00-\\x1F\\x7F]/', $redirectTo);
+        if ($redirectTo !== '' && (api_valid_http_url($redirectTo) || $isSafeRelativeRedirect)) {
+            $encodedRedirect = json_encode(
+                $redirectTo,
+                JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+            );
+            $response = '<script type="text/javascript">window.setTimeout(function() { window.location.href=' . $encodedRedirect . '; }, 1000);</script>';
         }
 
         if ($sendMail) {
@@ -434,13 +539,20 @@ function handleFormSubmission()
 
 function pushWebhook($formConfig, array $data, array $attachments)
 {
-    $formId = $formConfig['id'];
-    $formName = $formConfig['form']['name'];
+    $formId = isset($formConfig['id']) ? (string) $formConfig['id'] : '';
+    $formName = isset($formConfig['form']['name']) ? (string) $formConfig['form']['name'] : '';
+    $webhookUrl = isset($formConfig['form']['webhookUrl']) ? (string) $formConfig['form']['webhookUrl'] : '';
+    if (!api_valid_http_url($webhookUrl)) {
+        return;
+    }
 
     foreach ($attachments as $label => $fileData) {
+        if (!is_array($fileData) || !isset($fileData['tempFile']) || !is_file($fileData['tempFile'])) {
+            continue;
+        }
         $data[$label] = [
-            'name' => $fileData['name'],
-            'type' => $fileData['type'],
+            'name' => isset($fileData['name']) ? $fileData['name'] : 'attachment',
+            'type' => isset($fileData['type']) ? $fileData['type'] : 'application/octet-stream',
             'body' => filesize($fileData['tempFile']) < 1024 * 1024 * 1024 ? base64_encode(file_get_contents($fileData['tempFile'])) : 'too_large',
         ];
     }
@@ -452,10 +564,13 @@ function pushWebhook($formConfig, array $data, array $attachments)
         'submitted_at' => date('r')
     ]);
 
-    $ch = curl_init($formConfig['form']['webhookUrl']);
+    $ch = curl_init($webhookUrl);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
     curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Length: ' . strlen($payload)]);
     curl_exec($ch);
     curl_close($ch);
@@ -476,6 +591,11 @@ function forwardToApi($url, $requestMethod, $postData = null)
     curl_setopt($ch, CURLOPT_URL, $apiUrl);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_MAXREDIRS, 3);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+    curl_setopt($ch, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
 
     if ($requestMethod === 'POST') {
         $postData = $postData ?: $_POST;
@@ -505,6 +625,9 @@ function curl($url)
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
     $return = curl_exec($ch);
     curl_close($ch);
     return $return;

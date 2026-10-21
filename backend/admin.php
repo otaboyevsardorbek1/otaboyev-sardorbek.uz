@@ -22,7 +22,10 @@ function admin_headers()
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
     header('Pragma: no-cache');
     header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: DENY');
+    header("Content-Security-Policy: frame-ancestors 'none'");
     header('Referrer-Policy: no-referrer');
+    header('X-Robots-Tag: noindex, nofollow');
 }
 
 function admin_respond($data, $code)
@@ -49,6 +52,10 @@ function admin_fail($message, $errorCode, $httpCode)
 
 function admin_redirect($path)
 {
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('X-Frame-Options: DENY');
+    header("Content-Security-Policy: frame-ancestors 'none'");
+    header('X-Robots-Tag: noindex, nofollow');
     header('Location: ' . $path, true, 302);
     exit;
 }
@@ -171,23 +178,47 @@ function admin_mask_email($email)
     return $visible . str_repeat('*', max(2, strlen($name) - strlen($visible))) . '@' . $parts[1];
 }
 
+function admin_origin_parts($url)
+{
+    $parts = parse_url((string) $url);
+    if (!is_array($parts) || empty($parts['host'])) {
+        return null;
+    }
+
+    $scheme = isset($parts['scheme']) ? strtolower((string) $parts['scheme']) : '';
+    if ($scheme !== 'http' && $scheme !== 'https') {
+        return null;
+    }
+
+    $port = isset($parts['port']) ? (int) $parts['port'] : ($scheme === 'https' ? 443 : 80);
+    return array(
+        'scheme' => $scheme,
+        'host' => strtolower((string) $parts['host']),
+        'port' => $port,
+    );
+}
+
 function admin_check_origin()
 {
     $config = admin_config();
-    $expectedHost = parse_url($config['site_url'], PHP_URL_HOST);
-    if (!$expectedHost) {
-        return;
+    $expected = admin_origin_parts($config['site_url']);
+    if ($expected === null) {
+        admin_fail('Cross-origin request rejected', 'origin_rejected', 403);
     }
 
-    $origin = isset($_SERVER['HTTP_ORIGIN']) ? (string) $_SERVER['HTTP_ORIGIN'] : '';
-    $referer = isset($_SERVER['HTTP_REFERER']) ? (string) $_SERVER['HTTP_REFERER'] : '';
+    $origin = isset($_SERVER['HTTP_ORIGIN']) && is_string($_SERVER['HTTP_ORIGIN']) ? (string) $_SERVER['HTTP_ORIGIN'] : '';
+    $referer = isset($_SERVER['HTTP_REFERER']) && is_string($_SERVER['HTTP_REFERER']) ? (string) $_SERVER['HTTP_REFERER'] : '';
     $candidate = $origin !== '' ? $origin : $referer;
     if ($candidate === '') {
+        // The CSRF token is still mandatory for state-changing requests.
         return;
     }
 
-    $candidateHost = parse_url($candidate, PHP_URL_HOST);
-    if (!$candidateHost || strcasecmp($candidateHost, $expectedHost) !== 0) {
+    $actual = admin_origin_parts($candidate);
+    if ($actual === null
+        || $actual['host'] !== $expected['host']
+        || $actual['scheme'] !== $expected['scheme']
+        || $actual['port'] !== $expected['port']) {
         admin_fail('Cross-origin request rejected', 'origin_rejected', 403);
     }
 }

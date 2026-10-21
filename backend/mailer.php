@@ -77,10 +77,17 @@ function admin_mail_send_smtp(array $mail, $to, $subject, $text, $html)
     $user = (string) $mail['smtp_user'];
     $pass = (string) $mail['smtp_pass'];
     $from = admin_mail_clean_header($mail['from']);
+    $to = admin_mail_clean_header($to);
     $fromHeader = admin_mail_from_header($mail);
 
     if ($host === '' || $port < 1 || $port > 65535) {
         return array(false, 'SMTP is not configured');
+    }
+    if (filter_var($from, FILTER_VALIDATE_EMAIL) === false) {
+        return array(false, 'Invalid SMTP sender');
+    }
+    if (filter_var($to, FILTER_VALIDATE_EMAIL) === false) {
+        return array(false, 'Invalid SMTP recipient');
     }
 
     $remote = ($secure === 'ssl' ? 'ssl://' : '') . $host . ':' . $port;
@@ -165,7 +172,7 @@ function admin_mail_send_smtp(array $mail, $to, $subject, $text, $html)
         fclose($socket);
         return array(false, 'SMTP MAIL FROM failed');
     }
-    $result = $command('RCPT TO:<' . admin_mail_clean_header($to) . '>', 250);
+    $result = $command('RCPT TO:<' . $to . '>', 250);
     if (!$result[0]) {
         fclose($socket);
         return array(false, 'SMTP RCPT TO failed');
@@ -179,7 +186,7 @@ function admin_mail_send_smtp(array $mail, $to, $subject, $text, $html)
     $boundary = 'b' . bin2hex(random_bytes(12));
     $headers = 'Date: ' . date('r') . "\r\n"
         . 'From: ' . $fromHeader . "\r\n"
-        . 'To: ' . admin_mail_clean_header($to) . "\r\n"
+        . 'To: ' . $to . "\r\n"
         . 'Subject: ' . admin_mail_clean_header($subject) . "\r\n"
         . 'MIME-Version: 1.0' . "\r\n"
         . 'Content-Type: multipart/alternative; boundary="' . $boundary . '"' . "\r\n";
@@ -212,6 +219,9 @@ function admin_send_login_code($to, $code, $ttlMinutes)
     $to = admin_mail_clean_header($to);
     if (filter_var($to, FILTER_VALIDATE_EMAIL) === false) {
         return array(false, 'Invalid recipient');
+    }
+    if (filter_var(admin_mail_clean_header($mail['from']), FILTER_VALIDATE_EMAIL) === false) {
+        return array(false, 'Invalid sender');
     }
 
     list($subject, $text, $html) = admin_mail_message($code, $ttlMinutes);
