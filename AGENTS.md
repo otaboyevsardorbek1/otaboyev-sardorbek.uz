@@ -12,8 +12,10 @@ Oxirgi audit: **2026-10-21**. Joriy ish va backlog — [tz.md](tz.md), uzoq mudd
 | Next dev server | `npm run dev` — API yo‘q; frontend statik fallback bilan ishlaydi |
 | Static export | `npm run build` → `out/`; postbuild `files/`, `js/`, `css/`, `favicon.svg`, `api.php`, `backend/`, mavjud bo‘lsa `config.local.php`, `.htaccess`, `sitemap.xml` ni ko‘chiradi |
 | CI | `.github/workflows/ci.yml` — push/PR’da `npm ci`, `npm run check`, `npm run build` va export fayllarini tekshiradi |
-| Export preview | `APP_ENV=local SITE_URL=http://127.0.0.1:8000 DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out` |
-| Sintaksis tekshiruvi | `npm run check` — `php -l api.php`, backend fayllari, `node --check js/portfolio.js`; JSX ni `npm run build` tekshiradi |
+| Lokal preview | `./run_local.sh` (`APP_ENV=local`, default `127.0.0.1:8000`); to‘xtatish `./stop_local.sh` |
+| Server preview | `./run_server.sh` (`APP_ENV=production`, default `127.0.0.1:8081`); to‘xtatish `./stop_server.sh` |
+| Export preview (manual) | `APP_ENV=local SITE_URL=http://127.0.0.1:8000 DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out` |
+| Sintaksis tekshiruvi | `npm run check` — `php -l api.php`, backend fayllari, `scripts/php-server-router.php`, `node --check js/portfolio.js`; JSX ni `npm run build` tekshiradi |
 | API health | `curl -s http://127.0.0.1:8000/api.php/health` |
 | Content API | `curl -s "http://127.0.0.1:8000/api.php/profile?lang=uz"` · `/api.php/projects?lang=uz` · `/api.php/projects/gitinsight?lang=uz` |
 | Admin config | `curl -s http://127.0.0.1:8000/api.php/admin/config` |
@@ -122,7 +124,7 @@ Matn o‘zgarsa — 3 tilda ham. `id`, `class`, `name`, `data-*` tarjima qilinma
 
 1. `npm run check`.
 2. `npm run build` — xatosiz export + postbuild copy.
-3. Test DB bilan: `APP_ENV=local SITE_URL=http://127.0.0.1:8000 DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out`.
+3. Test DB bilan: `APP_ENV=local SITE_URL=http://127.0.0.1:8000 DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... ./run_local.sh`; to‘xtatish `./stop_local.sh`. Skriptlar PHP built-in server ishlatadi, `.htaccess` qo‘llanmaydi.
 4. `/uz/`, `/en/`, `/ru/` + bitta ma’lum detail; Apache’da admin yaratgan slug `/uz/projects/<slug>/` fallback’i; F12 → Console/Network’da kutilmagan 404, CORS yoki hydration xatosi yo‘qligi.
 5. API: profile/projects/detail (uz/en/ru, invalid lang, 404 slug, DB yo‘q → 503).
 6. Contact formani yuborib ko‘r (Network’da `/api.php/form_container/submit`); DB’da `contact_messages` yozuvi, admin panelda xabar, `website` honeypot va 6-chi so‘rovda `429` tekshiriladi.

@@ -69,7 +69,13 @@ export DB_PASS=secret
 
 ### 3. Preview
 ```bash
-APP_ENV=local SITE_URL=http://127.0.0.1:8000 php -S 127.0.0.1:8000 -t out
+./run_local.sh
+```
+
+Skript `out/` yo‘q bo‘lsa avtomatik `npm run build` qiladi va PHP built-in server orqali to‘liq ilovani ishga tushiradi (`APP_ENV=local`, default port `8000`). To‘xtatish:
+
+```bash
+./stop_local.sh
 ```
 
 Keyin quyidagi manzillarga kiring:
@@ -79,7 +85,9 @@ Keyin quyidagi manzillarga kiring:
 - http://127.0.0.1:8000/ru/
 - http://127.0.0.1:8000/uz/projects/gitinsight/
 
-`npm run dev` faqat frontend uchun qulay; unda PHP API yo‘q, shuning uchun bosh sahifa statik fallback bilan ishlaydi. API’ni sinash uchun yuqoridagi `php -S ... -t out` ishlatiladi.
+Production rejimidagi preview uchun `./run_server.sh` (default `8081`, `APP_ENV=production`) va `./stop_server.sh` ishlatiladi. `PORT`, `HOST`, `FORCE_BUILD=1` va DB/admin environment variable’larini oldindan export qilish mumkin. Loglar `.run/local.log` va `.run/server.log` ga yoziladi.
+
+`npm run dev` faqat frontend uchun qulay; unda PHP API yo‘q, shuning uchun bosh sahifa statik fallback bilan ishlaydi. `run_local.sh`/`run_server.sh` PHP built-in server va `scripts/php-server-router.php` dan foydalanadi; router maxfiy fayllar uchun `403`, noma’lum URL uchun `404.html`, admin yaratgan project slug uchun fallback route beradi. `.htaccess` ning HTTPS/rewrite qoidalarini to‘liq tekshirish uchun Apache ishlatiladi.
 
 Admin API’ni lokalda sinash uchun `APP_ENV=local`, `SITE_URL=http://127.0.0.1:8000`, `APP_SECRET` (64 hex), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `ADMIN_TELEGRAM_ID`, `ADMIN_EMAIL` va `ADMIN_MAIL_DRIVER=log` ni ham bering. Telegram widget lokal HTTP’da ishlamaydi; callback’ni test ma’lumoti bilan `curl` orqali yoki production HTTPS’da sinang. Email kod lokalda `ADMIN_MAIL_LOG` fayliga yoziladi.
 
