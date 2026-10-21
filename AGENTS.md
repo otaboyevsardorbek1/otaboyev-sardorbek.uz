@@ -15,7 +15,7 @@ Oxirgi audit: **2026-10-21**. Joriy ish va backlog — [tz.md](tz.md), uzoq mudd
 | Lokal preview | `./run_local.sh` (`APP_ENV=local`, default `127.0.0.1:8000`); to‘xtatish `./stop_local.sh` |
 | Server preview | `./run_server.sh` (`APP_ENV=production`, default `127.0.0.1:8081`); to‘xtatish `./stop_server.sh` |
 | Export preview (manual) | `APP_ENV=local SITE_URL=http://127.0.0.1:8000 DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out` |
-| Sintaksis tekshiruvi | `npm run check` — `php -l api.php`, backend fayllari, `scripts/php-server-router.php`, `node --check js/portfolio.js`; JSX ni `npm run build` tekshiradi |
+| Sintaksis tekshiruvi | `npm run check` — `php -l api.php`, backend fayllari, `scripts/php-server-router.php`, `node --check js/portfolio.js`, run/stop skriptlari `bash -n`; JSX ni `npm run build` tekshiradi |
 | API health | `curl -s http://127.0.0.1:8000/api.php/health` |
 | Content API | `curl -s "http://127.0.0.1:8000/api.php/profile?lang=uz"` · `/api.php/projects?lang=uz` · `/api.php/projects/gitinsight?lang=uz` |
 | Admin config | `curl -s http://127.0.0.1:8000/api.php/admin/config` |
