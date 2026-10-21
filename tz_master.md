@@ -235,7 +235,8 @@ Owner decisions are required for locale parity (`en/*`), media upload and legacy
 - `admin@` OTP/inbox, `no-reply@` send, `contact@` → `admin@` forwarder; Port25 SPF pass, DKIM none, DMARC `p=none`.
 - Telegram bot webhook with secret, commands and IMAP bridge; fake-update tests for `/help`, `/inbox`, `/read`, `/send` passed.
 - API/static CSP/HSTS/frame/referrer/COOP/CORP headers; `X-Powered-By` removed; headless browser checks passed.
-- Outstanding: external DKIM/DMARC and Exim signing; real Telegram Login/widget; final full tar deploy.
+- Full tar deploy completed; SSH key passphrase rotated after setup exposure (new value stored outside the repo, mode 600).
+- Outstanding: external DKIM/DMARC and Exim signing; real Telegram Login/widget.
 
 **Remaining:**
 

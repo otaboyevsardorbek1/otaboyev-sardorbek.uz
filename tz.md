@@ -26,7 +26,7 @@ The implemented architecture is coherent: static Next pages, a PHP-only runtime 
 - BotFather `/setdomain` and a real Telegram Login/update need a manual check with the owner’s account;
 - the static detail fallback is still not crawler-fresh after admin edits;
 - contact messages persist in MySQL and appear in the admin inbox; contact email notification is not wired (the inbox is the source of truth);
-- SSH key/passphrase rotation and a final production redeploy remain.
+- SSH key passphrase was rotated on 2026-10-22; the new value is stored outside the repo (mode 600).
 
 The backlog below turns those findings into ordered work.
 
@@ -62,7 +62,7 @@ Production DB/mailbox/bot/admin configuration is complete and smoke-tested. Rema
 | P1 | DKIM is absent and DMARC is `p=none`; Exim does not sign | external DNS (`ns1/ns2.eskiz.uz`), cPanel/WHM; Port25 report | Publish a fresh `default._domainkey` TXT and set DMARC to `p=quarantine` once provider/WHM access exists; enable Exim DKIM signing; rerun Port25 |
 | P1 | BotFather domain and a real Telegram admin update are not verified | BotFather; `@otaboyev_sardorbek_uz_bot`; `/admin/` widget | Run `/setdomain otaboyev-sardorbek.uz`, log in with the real Telegram account, and send one real `/help`/`/inbox` message to the bot |
 | P1 | Full deploy after the latest fixes is pending | `/home/host9590/apps/.../out`, `/home/host9590/public_html` | Build with Node 22 and tar-deploy `out/` excluding `config.local.php`; preserve `.well-known/`; rerun live checks |
-| P2 | SSH key passphrase was exposed during setup | local `~/.ssh/id_rsa` | Rotate the passphrase or replace the key with the owner |
+| P3 | SSH key passphrase was exposed during setup | local `~/.ssh/id_rsa` | Completed 2026-10-22: passphrase rotated; new value stored outside the repo with mode 600 |
 | P2 | `en/*` legacy Sitejet pages have no uz/ru counterparts | `en/portfolio`, `en/tech-stack`, … | Owner decision: keep and translate, or remove from the repo/sitemap |
 | P3 | Detail fallback is build-time HTML; crawlers may see stale copy after admin edits | `components/ProjectDetail.jsx`, `[slug]/page.js` | Accept for now or add a production rebuild/publish hook |
 | P3 | Generic detail route serves listing metadata/canonical until JS runs | `app/(site)/[locale]/projects/view/page.js` | Add static/generic metadata strategy or accept the JS-only correction |
@@ -134,4 +134,4 @@ When architecture, routes, schema, deploy steps or security behavior change, upd
 2. Rebuild on the server with Node 22, tar-deploy `out/` preserving `config.local.php` and `.well-known/`, and rerun live API/admin/contact/bot checks.
 3. Publish DKIM and tighten DMARC once Eskiz DNS or WHM access is available; enable Exim DKIM signing and rerun Port25.
 4. Run the real Telegram Login flow and send one real admin message to the bot.
-5. Rotate the SSH key passphrase and decide the remaining owner questions (`en/*` legacy pages, media upload).
+5. Decide the remaining owner questions (`en/*` legacy pages, media upload).
