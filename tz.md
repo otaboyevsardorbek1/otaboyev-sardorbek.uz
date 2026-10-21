@@ -4,36 +4,39 @@
 > **Long-term plan and hosting notes:** [tz_master.md](tz_master.md).
 > This file is the current operational brief: what is true today, what is blocked, what comes next.
 
-## Snapshot — 2026-10-21
+## Snapshot — 2026-10-22
 
 - Frontend: Next.js App Router at the repo root, static export to `out/`; home, listing and 9 project detail pages are React.
 - Detail pages: build-time fallback from `content/locales.js`, then refresh from `/api.php/projects/{slug}?lang=...`; title, meta description and canonical are updated client-side.
 - Admin-created projects: `.htaccess` rewrites unknown `/{locale}/projects/<slug>/` URLs to `/{locale}/projects/view/?slug=...`; the client fetches the API and updates canonical.
 - Backend: PHP `api.php` + `backend/*.php`; MySQL content API, native contact form with admin inbox, Sitejet proxy and protected `/admin/` CRUD.
-- Auth: Telegram Login Widget → email OTP → session with CSRF; admin routes are noindex and have no wildcard CORS. The bot, `SITE_URL`, admin Telegram ID and `APP_SECRET` are set in gitignored `config.local.php`; DB and email delivery still need production verification.
-- DB: `database/schema.sql` + `database/seed.sql` seed 1 profile, 3 projects, 9 translations and an empty contact inbox; existing databases need `database/migrate-project-sections.sql` and the idempotent `database/migrate-contact-messages.sql`. Re-importing `seed.sql` resets content and overwrites admin edits.
+- Auth: Telegram Login Widget → email OTP → session with CSRF; admin routes are noindex and have no wildcard CORS. Production `config.local.php`, cPanel DB, mailboxes, bot, `SITE_URL`, admin Telegram ID and `APP_SECRET` are configured and smoke-tested.
+- Bot: private `backend/bot.php` webhook bridge with a secret header and numeric-admin allowlist; `/help`, `/inbox`, `/read` and `/send` work against cPanel IMAP/`mail()`. Real inbound Telegram message from the admin still needs a manual test.
+- DB: `host9590_portfolio` with `SELECT, INSERT, UPDATE, DELETE` only; schema/seed applied. `database/schema.sql` + `database/seed.sql` seed 1 profile, 3 projects, 9 translations and an empty contact inbox; re-importing `seed.sql` resets admin edits.
+- Email: cPanel `admin@` (OTP/inbox), `no-reply@` (send) and `contact@` → `admin@` forwarder work. SPF passes; external DKIM is absent, Exim does not sign, and DMARC is still `p=none`; provider/WHM action is required.
 - SEO: `sitemap.xml` starts with 15 real URLs and is regenerated after every admin project create/update/delete (or from the admin button); canonical/hreflang exists on 3 homes, 3 listings and 9 detail pages.
-- Routing: unknown URLs now return a real HTTP 404 with `out/404.html`; the admin-created slug fallback is unchanged.
-- Last verified: `npm run check` and `npm run build` pass; API returns 200/404/429/503 as expected; contact inbox, sitemap generator, admin-user CRUD, Apache 404 and generic detail fallback work.
+- Routing/security: unknown URLs return a real HTTP 404 with `out/404.html`; CSP/HSTS/frame/referrer/COOP/CORP headers are live; `/config.local.php`, `/backend/*` and `/database/*` return 403.
+- Last verified: `npm run check`, build, live API 200/401/404, admin OTP/CSRF/inbox/delete, contact insert/honeypot/rate logic, bot webhook security and fake `/help`/`/inbox`/`/read`/`/send`, Apache 404, and headless browser CSP/hydration checks on uz/en/ru/listing/detail/admin/dashboard.
 
 ### Audit conclusions
 
-The implemented architecture is coherent: static Next pages, a PHP-only runtime backend, a DB-backed content API and a working two-step admin login. No blocking defect was found in the audited page/API/auth paths. The main risks are operational, not architectural:
+The implemented architecture is coherent: static Next pages, a PHP-only runtime backend, a DB-backed content API, a private Telegram bot bridge and a working two-step admin login. No blocking defect was found in the audited page/API/auth/bot paths. The remaining risks are operational, not architectural:
 
-- the Telegram bot/domain/admin ID and app secret are configured locally, but cPanel DB credentials and email DNS/verification are still missing;
-- the migration and documentation are committed and pushed to `origin/main`;
+- external DNS is managed by Eskiz, not the cPanel zone: DKIM cannot be published and DMARC remains `p=none`; Exim does not sign outbound mail;
+- BotFather `/setdomain` and a real Telegram Login/update need a manual check with the owner’s account;
 - the static detail fallback is still not crawler-fresh after admin edits;
-- contact messages now persist in MySQL and are available in the admin inbox; email notification remains unverified.
+- contact messages persist in MySQL and appear in the admin inbox; contact email notification is not wired (the inbox is the source of truth);
+- SSH key/passphrase rotation and a final production redeploy remain.
 
 The backlog below turns those findings into ordered work.
 
 ### Repository state (do not lose this context)
 
-The detail-page migration and documentation rework were committed and pushed to `origin/main` on 2026-10-21 with `feat: migrate portfolio to Next.js with DB-backed content and admin` and `docs: align architecture, task brief and security guides`. Only unrelated files (`CodeAnalyzer_v2.py` and the empty `README`) remain untracked on purpose. Review `git status` and `git diff` before the next commit.
+The live deployment is built from `/home/host9590/apps/otaboyev-sardorbek.uz` and published to `/home/host9590/public_html`; the last code commit before this documentation pass was `a88999d fix: harden API responses and IMAP message parsing`. Only unrelated `CodeAnalyzer_v2.py` remains untracked on purpose. Review `git status` and `git diff` before the next commit.
 
 ## Active work
 
-The contact inbox, automatic sitemap, admin-user manager, native contact form and real 404 are implemented and verified locally. Commit/push this change set, then move to production configuration.
+Production DB/mailbox/bot/admin configuration is complete and smoke-tested. Remaining work: commit the current documentation/deploy notes, rebuild `out/` on Node 22, perform a full tar deploy while preserving `config.local.php` and `.well-known/`, then re-run live API/admin/contact/bot checks. DNS DKIM/DMARC and a real Telegram Login test are blocked on provider/owner action.
 
 ## Baseline completed
 
@@ -56,7 +59,10 @@ The contact inbox, automatic sitemap, admin-user manager, native contact form an
 
 | Prio | Problem | Evidence / where | Next action |
 |---|---|---|---|
-| P1 | cPanel DB credentials and email delivery are not configured | `config.local.php` / env; `backend/config.php` | Create the cPanel DB; import schema/seed for a fresh DB or run the migration for an existing one; fill the DB credentials in gitignored `config.local.php`; verify the `mail`/SMTP path and BotFather `/setdomain`; test `/admin/` on HTTPS |
+| P1 | DKIM is absent and DMARC is `p=none`; Exim does not sign | external DNS (`ns1/ns2.eskiz.uz`), cPanel/WHM; Port25 report | Publish a fresh `default._domainkey` TXT and set DMARC to `p=quarantine` once provider/WHM access exists; enable Exim DKIM signing; rerun Port25 |
+| P1 | BotFather domain and a real Telegram admin update are not verified | BotFather; `@otaboyev_sardorbek_uz_bot`; `/admin/` widget | Run `/setdomain otaboyev-sardorbek.uz`, log in with the real Telegram account, and send one real `/help`/`/inbox` message to the bot |
+| P1 | Full deploy after the latest fixes is pending | `/home/host9590/apps/.../out`, `/home/host9590/public_html` | Build with Node 22 and tar-deploy `out/` excluding `config.local.php`; preserve `.well-known/`; rerun live checks |
+| P2 | SSH key passphrase was exposed during setup | local `~/.ssh/id_rsa` | Rotate the passphrase or replace the key with the owner |
 | P2 | `en/*` legacy Sitejet pages have no uz/ru counterparts | `en/portfolio`, `en/tech-stack`, … | Owner decision: keep and translate, or remove from the repo/sitemap |
 | P3 | Detail fallback is build-time HTML; crawlers may see stale copy after admin edits | `components/ProjectDetail.jsx`, `[slug]/page.js` | Accept for now or add a production rebuild/publish hook |
 | P3 | Generic detail route serves listing metadata/canonical until JS runs | `app/(site)/[locale]/projects/view/page.js` | Add static/generic metadata strategy or accept the JS-only correction |
@@ -107,8 +113,10 @@ When architecture, routes, schema, deploy steps or security behavior change, upd
 5. API: profile/projects/detail for all locales, invalid `lang`, missing slug (404), DB unavailable (503).
 6. Contact form: network request to `/api.php/form_container/submit` succeeds; row appears in `contact_messages`; honeypot is rejected; the 6th request from the same IP within 10 minutes returns 429.
 7. Admin: `/admin/` config `enabled`; Telegram callback → challenge cookie → email code (`log` locally) → session; wrong OTP, expired challenge/session, missing CSRF and admin CORS checks; inbox count/list/read/delete; admin add/edit/delete with self/last-admin guards; sitemap button returns `{updated:true,urls:N}`.
-8. Apache: known detail URL, admin-created slug fallback, denied `backend/`/`database/`/`config.local.php`, `/de/` and `/nope` → real 404, `/api.php/health` → 200.
-9. `git diff --check`, `git diff --stat`, and review the complete diff before committing.
+8. Bot: `POST /api.php/bot/webhook` without/wrong secret → 403; GET → 405; fake update from the configured numeric admin ID runs `/help`, `/inbox`, `/read` and `/send`; `/send` mail lands in `admin@`; `getWebhookInfo` shows `pending_update_count=0`.
+9. Apache: known detail URL, admin-created slug fallback, denied `backend/`/`database/`/`config.local.php`, `/de/` and `/nope` → real 404, `/api.php/health` → 200.
+10. Headless browser: `/uz/`, `/en/`, `/ru/`, `/uz/projects/`, a known detail, `/admin/` and authenticated `/admin/dashboard/` have no console/CSP/request-failure or hydration errors.
+11. `git diff --check`, `git diff --stat`, and review the complete diff before committing.
 
 ## Acceptance criteria
 
@@ -122,7 +130,8 @@ When architecture, routes, schema, deploy steps or security behavior change, upd
 
 ## Next actions
 
-1. Commit/push the inbox, sitemap, admin-user, native contact and 404 work.
-2. Fill the cPanel DB credentials in `config.local.php`, import schema/seed (or run both migrations on an existing DB), verify email delivery and BotFather `/setdomain`, deploy `out/`, and test `/admin/` on HTTPS.
-3. Decide the remaining owner questions: `en/*` legacy pages and media upload.
-4. Re-run `npm run check && npm run build` after any final edit.
+1. Commit/push this documentation and security-state update.
+2. Rebuild on the server with Node 22, tar-deploy `out/` preserving `config.local.php` and `.well-known/`, and rerun live API/admin/contact/bot checks.
+3. Publish DKIM and tighten DMARC once Eskiz DNS or WHM access is available; enable Exim DKIM signing and rerun Port25.
+4. Run the real Telegram Login flow and send one real admin message to the bot.
+5. Rotate the SSH key passphrase and decide the remaining owner questions (`en/*` legacy pages, media upload).

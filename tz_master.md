@@ -4,7 +4,7 @@
 > **Current state, backlog and acceptance:** [tz.md](tz.md).
 > This file is the long-term product/architecture plan, API contract and hosting reference.
 
-Last audit: **2026-10-21**.
+Last audit: **2026-10-22**.
 
 ## 1. Product goal
 
@@ -46,6 +46,7 @@ The repository has one Next.js frontend layer, one PHP content/admin backend and
 - `backend/contact.php` — contact validation, IP hash, rate limit, inbox persistence and native `id=contact` handler.
 - `backend/content.php` — public JSON content API.
 - `backend/admin.php` — Telegram + email OTP auth, sessions, CSRF, rate limits, audit log, profile/project CRUD, inbox, sitemap and admin-user management.
+- `backend/bot.php` — private Telegram email bridge: webhook secret + numeric admin allowlist, IMAP inbox/read and cPanel `mail()` send; only `/api.php/bot/webhook`.
 - `backend/mailer.php` — `mail`, SMTP, Resend, Brevo and local `log` drivers.
 - `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`.
 
@@ -110,6 +111,7 @@ Envelope:
 | GET | `/api.php/projects?lang=uz` | active project cards: slug, title, summary, tech, category, links |
 | GET | `/api.php/projects/{slug}?lang=uz` | full detail: description, results, stack notes |
 | POST | `/api.php/form_container/submit` | `id=contact`: native validation + `contact_messages` + 5/10 min IP limit; other IDs: Sitejet contract (`id`, `form_<id>[ed-f-N]`) |
+| POST | `/api.php/bot/webhook` | private Telegram bot bridge: `X-Telegram-Bot-Api-Secret-Token`, numeric admin ID, `message` updates only |
 | GET | `/api.php/websites` | token-protected site list (`X-Api-Token` or `Authorization: Bearer`) |
 
 Other paths are proxied to `https://api.sitehub.io`; CDN image URLs are rewritten to `/api.php`/`https://inter-cdn.com` per the existing proxy rules.
@@ -147,7 +149,9 @@ Errors: `404 project_not_found`, `503 db_unavailable`, `405 method_not_allowed`,
 - Rate limits: challenge and start attempts per time window; auth events recorded.
 - Audit: profile/project, inbox read/delete, sitemap and admin-user mutations written to `admin_audit_log`.
 - Auth is disabled unless all required settings are valid: HTTPS production URL, mail driver, Telegram bot token/username, numeric admin ID, valid admin email and a 64-hex app secret.
-- Never expose bot token, app secret, OTP or real admin email in public JSON or logs.
+- Bot bridge: secret token (`hash_equals`) plus numeric `admin.telegram_id`; GET/other updates rejected; no OTP, bot token or mailbox password is sent to Telegram.
+- Never expose bot token, app secret, OTP, webhook secret, IMAP password or real admin email in public JSON or logs.
+- Production DB user has only `SELECT, INSERT, UPDATE, DELETE`; DDL is granted temporarily for migrations.
 
 ## 6. Deployment model
 
@@ -156,16 +160,18 @@ Errors: `404 project_not_found`, `503 db_unavailable`, `405 method_not_allowed`,
 - Primary server: Apache with `.htaccess` (`mod_rewrite`, `mod_headers`).
 - Nginx: `.htaccess` is ignored; equivalent `try_files`/rewrite is required for the generic detail fallback, plus `error_page 404 /404.html` for real 404s.
 - Build locally or on the server: `npm ci && npm run build`; copy `out/` to the web root.
-- DB config: gitignored `config.local.php` or `DB_*` environment variables.
-- Production requires HTTPS, a real DB, Telegram bot/ID, email credentials and `APP_SECRET`.
-- No CI pipeline yet; run checks manually or add the P3 workflow from `tz.md`.
+- Current production: source `/home/host9590/apps/otaboyev-sardorbek.uz`, web root `/home/host9590/public_html`, Node 22 via `/opt/alt/alt-nodejs22/enable`; deploy with `tar` because `rsync` is absent, preserving `config.local.php` and `.well-known/`.
+- DB config: gitignored `config.local.php` or `DB_*` environment variables. Production DB `host9590_portfolio` is least-privilege.
+- Production requires HTTPS, a real DB, Telegram bot/ID, email credentials, bot webhook secret and `APP_SECRET`.
+- CI exists in `.github/workflows/ci.yml` (`npm ci`, `npm run check`, `npm run build`); run the same checks manually for server-only PHP changes.
 
 Environment groups:
 
 | Group | Keys |
 |---|---|
 | DB | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS`, optional `DB_SOCKET` |
-| Admin | `SITE_URL`/`APP_URL`, `APP_ENV`, `APP_SECRET`/`ADMIN_APP_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `ADMIN_TELEGRAM_ID`, `ADMIN_EMAIL`, TTL/attempt settings |
+| Admin | `SITE_URL`/`APP_URL`, `APP_ENV`, `APP_SECRET`/`ADMIN_APP_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `ADMIN_TELEGRAM_ID`, `ADMIN_EMAIL`, `ADMIN_PHONE`, TTL/attempt settings |
+| Bot/IMAP | `bot.webhook_secret`, `bot.imap_host` (`panel2.eskiz.uz`), `bot.imap_port` (`993`), `bot.imap_user`, `bot.imap_pass`, `bot.imap_ssl` |
 | Mail | `ADMIN_MAIL_DRIVER`/`MAIL_DRIVER`, `ADMIN_MAIL_FROM`, `ADMIN_MAIL_FROM_NAME`, log file, Resend/Brevo keys, SMTP host/port/secure/user/pass |
 | Tokens | `API_TOKEN`, `SITEHUB_API_TOKEN`, `OTABOYEV_API_TOKEN` |
 
@@ -197,7 +203,7 @@ Order matters: correctness and production safety before optional features.
 | Phase | Goal | Status / items |
 |---|---|---|
 | 0 | Repo hygiene | Completed: migration and docs are committed and pushed to `origin/main`. Remove or ignore the empty `README` and `CodeAnalyzer_v2.py` only with owner approval |
-| 1 | Production readiness | cPanel DB, `config.local.php`, import schema/seed or migration, BotFather domain, email DNS/SPF/DKIM, HTTPS admin test |
+| 1 | Production readiness | Completed: cPanel DB + least privilege, `config.local.php`, schema/seed, mailboxes/forwarder, HTTPS admin/OTP test, bot webhook/IMAP/send. Remaining: external DKIM/DMARC + Exim signing, real BotFather widget test, full redeploy |
 | 2 | Content operations | Completed: contact inbox, native contact form and extra-admin UI. Remaining: add a rebuild/publish hook so admin edits reach static HTML crawlers |
 | 3 | SEO and routing | Completed: auto-generate `sitemap.xml` for new slugs and real 404. Remaining: improve generic detail metadata/hreflang |
 | 4 | Maintenance | Idempotent migration runner, media upload, legacy cleanup, remove unused legacy assets once safe |
@@ -222,13 +228,22 @@ Owner decisions are required for locale parity (`en/*`), media upload and legacy
 - Automatic sitemap regeneration and admin-user CRUD with self/last-admin protection.
 - Real `404.html` handling in Apache; SPA catch-all removed.
 
+**Production deployment 2026-10-22:**
+
+- cPanel DB `host9590_portfolio`, schema/seed, least-privilege user.
+- `config.local.php` with rotated `APP_SECRET`, DB/mailbox/bot secrets; mode 600.
+- `admin@` OTP/inbox, `no-reply@` send, `contact@` → `admin@` forwarder; Port25 SPF pass, DKIM none, DMARC `p=none`.
+- Telegram bot webhook with secret, commands and IMAP bridge; fake-update tests for `/help`, `/inbox`, `/read`, `/send` passed.
+- API/static CSP/HSTS/frame/referrer/COOP/CORP headers; `X-Powered-By` removed; headless browser checks passed.
+- Outstanding: external DKIM/DMARC and Exim signing; real Telegram Login/widget; final full tar deploy.
+
 **Remaining:**
 
-- Production credentials, Telegram BotFather domain and email DNS are not configured.
+- External DKIM/DMARC and Exim signing are blocked on Eskiz DNS/WHM access; real BotFather Login and a real Telegram admin update still need owner testing.
 - Static fallback requires a rebuild for crawlers to see admin-edited copy.
 - Generic detail metadata/canonical is corrected only after JS runs.
 - Media upload, `en/*` locale parity and legacy cleanup are not implemented.
-- Email notification for contact messages is not wired yet; the admin inbox is the source of truth.
+- Email notification for contact messages is not wired; the `contact@` forwarder and admin inbox are the source of truth.
 
 ## 10. Hosting appendix (shared cPanel)
 
@@ -255,4 +270,4 @@ This section is reference material for the hosting account; only the PHP/static 
 
 ## 11. Final guidance
 
-Keep the site stable, multilingual and production-friendly. Frontend changes belong in `app/` and `components/`, shared styling in `css/portfolio.css`, and backend changes in `api.php` / `backend/` with PHP 7.1 syntax. Do not add a Node runtime or a second server. Verify with `npm run check`, `npm run build`, the content API curls and a browser preview before deploying. Update `AGENTS.md`, `tz.md` and this file together whenever architecture, routes, schema, deploy steps or security behavior changes.
+Keep the site stable, multilingual and production-friendly. Frontend changes belong in `app/` and `components/`, shared styling in `css/portfolio.css`, and backend changes in `api.php` / `backend/` with PHP 7.1 syntax. Do not add a Node runtime or a second server. Keep the bot private: webhook secret + numeric admin allowlist, no OTP/credentials in Telegram. Verify with `npm run check`, `npm run build`, the content API curls and a browser preview before deploying. Update `AGENTS.md`, `tz.md` and this file together whenever architecture, routes, schema, deploy steps or security behavior changes.

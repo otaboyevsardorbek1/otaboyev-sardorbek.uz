@@ -1,6 +1,6 @@
 # Sardorbek Otaboyev Portfolio
 
-Bu loyiha Sardorbek Otaboyev uchun yaratilgan ko‘p tilli portfolio veb-saytidir. Frontend Next.js (App Router) bilan yig‘ilib, statik `out/` ko‘rinishida deploy qilinadi; PHP `api.php` form yuborish, tokenli endpointlar va MySQL’ga asoslangan content API’ni ta’minlaydi.
+Bu loyiha Sardorbek Otaboyev uchun yaratilgan ko‘p tilli portfolio veb-saytidir. Frontend Next.js (App Router) bilan yig‘ilib, statik `out/` ko‘rinishida deploy qilinadi; PHP `api.php` form yuborish, tokenli endpointlar va MySQL’ga asoslangan content API’ni ta’minlaydi. Admin panel Telegram + email OTP bilan himoyalangan; alohida shaxsiy Telegram bot cPanel mailbox’ini o‘qib, email yuboradi.
 
 Loyiha tuzilishi:
 - `app/` — Next.js App Router: `/` til redirect, `/{uz,en,ru}` bosh sahifalari, loyihalar ro‘yxati va 9 project detail sahifa
@@ -9,7 +9,7 @@ Loyiha tuzilishi:
 - `content/locales.js` — uz/en/ru matnlari, project detail fallback va SEO label’lari
 - `css/portfolio.css` — umumiy dizayn; `js/portfolio.js` — faqat legacy sahifalar uchun JS
 - `{uz,ru,en}/projects/*` — tarixiy legacy detail nusxalari; `out/` ga ko‘chirilmaydi, sayt React route’larini ishlatadi
-- `backend/` — DB config, content API (`profile`, `projects`), contact inbox (`contact.php`), admin auth (`admin.php`) va email (`mailer.php`)
+- `backend/` — DB config, content API (`profile`, `projects`), contact inbox (`contact.php`), admin auth (`admin.php`), email (`mailer.php`) va shaxsiy Telegram email ko‘prigi (`bot.php`)
 - `app/admin/`, `components/admin/`, `css/admin.css` — Telegram + email OTP bilan himoyalangan admin panel; inbox, loyihalar, adminlar
 - `database/` — MySQL `schema.sql`, `seed.sql` va migratsiyalar
 - `api.php` — PHP API: native contact form, tokenli endpoint, content route’lar, Sitejet proxy
@@ -22,8 +22,10 @@ Loyiha tuzilishi:
 - GitHub profil ma’lumotlarini yuklash
 - Contact form, MySQL inbox, honeypot/rate limit va fallback email ishlashi
 - Telegram Login Widget + email OTP asosidagi 2 bosqichli admin panel
+- Shaxsiy Telegram bot: IMAP inbox, xat o‘qish va cPanel orqali email yuborish (webhook secret + admin ID allowlist)
 - Profil va loyihalarni uch tilda tahrirlash (CRUD), audit log va CSRF himoyasi
 - Inbox (read/unread/delete), adminlar boshqaruvi va avtomatik `sitemap.xml`
+- CSP/HSTS/frame/referrer/COOP/CORP xavfsizlik headerlari; API `X-Powered-By` olib tashlangan
 - Haqiqiy 404 sahifa va Apache/Nginx routing
 - Responsive premium dark glassmorphism dizayn
 - Lokalizatsiya va sahifalar orasidagi navigatsiya
@@ -128,7 +130,39 @@ Eng tez variantlar:
 
 `ADMIN_MAIL_FROM` cPanel’dagi haqiqiy mailbox bo‘lsin. `log` driver faqat lokal test uchun; productionda avtomatik o‘chiriladi.
 
-### 3. Config
+Productionda `contact@otaboyev-sardorbek.uz` → `admin@otaboyev-sardorbek.uz` forwarder’i ham yaratilgan; contact form API’siz qolganda fallback shu manzilga yuboradi.
+
+**Email autentifikatsiyasi (2026-10-22):** cPanel `mail()` ishlaydi va Port25 tekshiruvi SPF’ni `pass` deb tasdiqladi. External DNS’da `default._domainkey` yo‘q, Exim hozir DKIM imzolamaydi, DMARC esa `v=DMARC1; p=none;`. DKIM/DMARC’ni yakunlash uchun Eskiz DNS yoki WHM/cPanel root darajasidagi amal kerak; buni “tayyor” deb hisoblamang.
+
+### 3. Telegram bot email bridge
+
+`backend/bot.php` private webhook rejimida ishlaydi va faqat `admin.telegram_id` ga ruxsat beradi. Bot token, webhook secret yoki OTP Telegram’ga yuborilmaydi.
+
+1. `config.local.php` da `bot.webhook_secret` (kamida 32 belgi), `bot.imap_user` va `bot.imap_pass` ni to‘ldiring.
+2. cPanel IMAP hosti sifatida `panel2.eskiz.uz:993/imap/ssl` ishlatiladi. `mail.otaboyev-sardorbek.uz` sertifikat hostname’iga mos kelmaydi.
+3. Webhook’ni o‘rnating (token va secret’ni shell tarixiga yozmang):
+
+```bash
+curl -sS "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
+  -d "url=https://otaboyev-sardorbek.uz/api.php/bot/webhook" \
+  -d "secret_token=${WEBHOOK_SECRET}" \
+  -d 'allowed_updates=["message"]'
+curl -sS "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo"
+```
+
+4. Bot command’larini e’lon qiling:
+
+```bash
+curl -sS "https://api.telegram.org/bot${BOT_TOKEN}/setMyCommands" \
+  -H 'Content-Type: application/json' \
+  --data '{"commands":[{"command":"start","description":"Boshlash"},{"command":"inbox","description":"Oxirgi 5 xat"},{"command":"read","description":"Xatni uid bo‘yicha o‘qish"},{"command":"send","description":"Email yuborish"},{"command":"help","description":"Yordam"}]}'
+```
+
+5. Telegram’da botga o‘zingiz yozib `/help`, `/inbox`, `/read <uid>` va `/send email@example.com | Mavzu | Matn` ni sinang.
+
+Webhook secret yo‘q yoki noto‘g‘ri bo‘lsa `403`, GET so‘rov `405` qaytadi; boshqa Telegram ID’dan kelgan update e’tiborsiz qoldiriladi.
+
+### 4. Config
 
 `config.local.example.php` dan `config.local.php` yarating va to‘ldiring:
 
@@ -147,6 +181,15 @@ return array(
         'telegram_bot_username' => 'YourAdminBot',
         'telegram_id' => '123456789',
         'email' => 'admin@otaboyev-sardorbek.uz',
+        'phone' => '+998900000000',
+    ),
+    'bot' => array(
+        'webhook_secret' => 'AT_LEAST_32_RANDOM_CHARACTERS',
+        'imap_host' => 'panel2.eskiz.uz',
+        'imap_port' => 993,
+        'imap_user' => 'admin@otaboyev-sardorbek.uz',
+        'imap_pass' => 'MAILBOX_PASSWORD',
+        'imap_ssl' => true,
     ),
     'mail' => array(
         'driver' => 'mail',
@@ -165,7 +208,7 @@ php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
 
 `APP_SECRET` aniq 64 hex belgidan iborat bo‘lmasa, email driver to‘liq sozlanmasa yoki productionda `SITE_URL` HTTPS bo‘lmasa admin auth o‘chirilgan holatda qoladi. Cloudflare yoki boshqa reverse proxy HTTPS’ni tugatsa, `ADMIN_TRUST_PROXY=1` qo‘ying; aks holda session cookie `Secure` belgisisiz qolishi mumkin. `config.local.php` gitignored va `.htaccess` bilan HTTP’dan yopilgan.
 
-### 4. Sxema va login
+### 5. Sxema va login
 
 ```bash
 mysql -u USER -p DB_NAME < database/schema.sql
@@ -320,7 +363,19 @@ npm run build
 
 Agar cPanel’da Node bo‘lmasa, buildni lokalda bajaring va faqat `out/` ni yuklang. `database/` va `src` fayllarni web rootga ochmang.
 
-**Muhim:** cPanel PHP versiyasi 7.1+ bo‘lsin; `pdo_mysql`, `curl`, `openssl` kengaytmalari yoqilgan bo‘lsin. `.htaccess` uchun `mod_rewrite` va `mod_headers` kerak.
+Hozirgi production cPanel’da source repo `/home/host9590/apps/otaboyev-sardorbek.uz`, web root esa `/home/host9590/public_html`. Serverda Node 22 `source /opt/alt/alt-nodejs22/enable` bilan yoqiladi. `rsync` mavjud emas; deploy `tar` bilan bajariladi va web rootdagi `config.local.php` hamda `.well-known/` saqlanadi:
+
+```bash
+cd /home/host9590/apps/otaboyev-sardorbek.uz
+git pull --ff-only origin main
+source /opt/alt/alt-nodejs22/enable
+npm ci && npm run build
+tar -C out --exclude='config.local.php' -cf - . | tar -C /home/host9590/public_html -xf -
+```
+
+Deploydan keyin `/api.php/health`, `/uz/`, `/admin/config` va login oqimini tekshiring.
+
+**Muhim:** cPanel PHP versiyasi 7.1+ bo‘lsin; `pdo_mysql`, `curl`, `openssl`, `imap` kengaytmalari yoqilgan bo‘lsin. `.htaccess` uchun `mod_rewrite` va `mod_headers` kerak.
 
 ### Repo klonlash (ixtiyoriy)
 ```bash
@@ -356,6 +411,7 @@ sudo find /var/www/otaboyev-sardorbek.uz -type f -exec chmod 644 {} \;
 | `/api.php/projects?lang=uz` | loyiha kartalari: slug, category, tag, title, summary, tech, links |
 | `/api.php/projects/{slug}?lang=uz` | loyiha tafsiloti: `description`, `results[]`, `stack_notes[]` |
 | `POST /api.php/form_container/submit` | `id=contact` native contact form; boshqa ID’lar Sitejet contracti |
+| `POST /api.php/bot/webhook` | private Telegram bot webhook; secret header + admin ID |
 | `/api.php/health` | `{"status":"ok"}` |
 | `/api.php/websites` | tokenli endpoint |
 
@@ -400,7 +456,7 @@ export APP_ENV=local
 export API_TOKEN="otaboyev-dev-token"
 ```
 
-`APP_ENV=production` (yoki `APP_ENV` umuman yo‘q) bo‘lsa, public dev token qabul qilinmaydi va token sozlanmagan endpoint `401` qaytaradi. Productionda haqiqiy secret ishlatilishi shart.
+`APP_ENV=production` (yoki `APP_ENV` umuman yo‘q) bo‘lsa, public dev token qabul qilinmaydi va token sozlanmagan endpoint `401` qaytaradi. Endpoint ishlatilsa, productionda haqiqiy secret ishlatilishi shart; hozirgi sayt bu endpointga bog‘liq emas.
 
 ## .htaccess funksiyasi
 
@@ -411,7 +467,7 @@ Loyihada root `.htaccess` fayli mavjud bo‘lib, quyidagilarni boshqaradi:
 - project detail/listing papkalari uchun `DirectoryIndex`; statik sahifasi yo‘q admin slug’lari uchun `/projects/view/?slug=...` fallback rewrite’i (per-slug statik rewrite qo‘shilmaydi, loop bo‘lmaydi)
 - cache headerlar
 - `ErrorDocument 404 /404.html` orqali haqiqiy 404
-- xavfsizlik headerlari (CSP, HSTS, nosniff, frame-ancestors)
+- xavfsizlik headerlari (CSP, HSTS, `X-Frame-Options: DENY`, nosniff, `Referrer-Policy`, `Permissions-Policy`, COOP/CORP)
 - `/api.php/...` PATH_INFO route’larini himoyalash
 
 Bu Apache hosting uchun mo‘ljallangan.
@@ -452,6 +508,12 @@ Shuningdek, `.htaccess` yoqilgan va Apache `mod_rewrite` faol bo‘lishi kerak. 
 - `503`: DB yoki `contact_messages` jadvali yo‘q. `config.local.php` ni va `database/migrate-contact-messages.sql` importini tekshiring; frontend bu holatda `mailto` fallback’ga o‘tadi.
 - `429`: bitta IP’dan 10 daqiqada 5 tadan ko‘p xabar yuborilgan; birozdan keyin qayta urinib ko‘ring.
 - Xabar DB’ga tushsa, `/admin/dashboard/` → **Xabarlar** bo‘limida ko‘rinadi. Honeypot (`website`) to‘ldirilgan bo‘lsa so‘rov rad etiladi.
+
+### Telegram bot javob bermasa
+- `getWebhookInfo` da URL `https://otaboyev-sardorbek.uz/api.php/bot/webhook` va `pending_update_count=0` bo‘lsin.
+- `bot.webhook_secret` 32+ belgi bo‘lsin va Telegram’dagi `secret_token` bilan bir xil bo‘lsin; mos kelmasa endpoint `403` qaytaradi.
+- `bot.imap_host=panel2.eskiz.uz`, port `993`, SSL yoqilgan bo‘lsin; mailbox paroli cPanel’dagi bilan bir xil bo‘lsin.
+- Faqat `admin.telegram_id` raqamli ID’dan kelgan xabarlar qabul qilinadi; boshqa chat e’tiborsiz qoldiriladi.
 
 ### CSS/JS yuklanmay qolsa
 Asset yo‘llari sahifa chuqurligiga mos bo‘lishi kerak. Loyiha umumiy assetlar:

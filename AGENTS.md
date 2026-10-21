@@ -1,8 +1,8 @@
 # AGENTS.md
 
-`otaboyev-sardorbek.uz` — Sardorbek Otaboyevning 3 tilli portfolio sayti. Frontend — repo ildizidagi Next.js (App Router, static export). Bosh sahifa, loyihalar ro‘yxati va 9 ta project detail sahifa React’da; detail sahifalar build vaqtidagi statik fallback bilan ochiladi va content API’dan yangilanadi. Backend — PHP `api.php` + MySQL content API va Telegram + email OTP bilan himoyalangan `/admin/` panel.
+`otaboyev-sardorbek.uz` — Sardorbek Otaboyevning 3 tilli portfolio sayti. Frontend — repo ildizidagi Next.js (App Router, static export). Bosh sahifa, loyihalar ro‘yxati va 9 ta project detail sahifa React’da; detail sahifalar build vaqtidagi statik fallback bilan ochiladi va content API’dan yangilanadi. Backend — PHP `api.php` + MySQL content API, Telegram + email OTP bilan himoyalangan `/admin/` panel va cPanel IMAP/email bilan ishlaydigan shaxsiy Telegram bot ko‘prigi.
 
-Oxirgi audit: **2026-10-21**. Joriy ish va backlog — [tz.md](tz.md), uzoq muddatli reja — [tz_master.md](tz_master.md).
+Oxirgi audit: **2026-10-22**. Joriy ish va backlog — [tz.md](tz.md), uzoq muddatli reja — [tz_master.md](tz_master.md).
 
 ## Komandalar
 
@@ -54,6 +54,7 @@ Oxirgi audit: **2026-10-21**. Joriy ish va backlog — [tz.md](tz.md), uzoq mudd
 - `backend/contact.php` — contact form validatsiyasi, IP hash, rate limit, `contact_messages`ga saqlash va native handler.
 - `backend/content.php` — public content API.
 - `backend/admin.php` — admin auth, session, CSRF, rate limit, audit, profile/project CRUD, inbox, sitemap va admin-user CRUD.
+- `backend/bot.php` — shaxsiy Telegram email ko‘prigi: webhook secret + numeric admin ID tekshiruvi, IMAP inbox o‘qish va cPanel `mail()` bilan email yuborish. Faqat `/api.php/bot/webhook` orqali ishlaydi; public UI yoki CORS yo‘q.
 - `backend/mailer.php` — `mail`, SMTP, Resend, Brevo va lokal `log` driver.
 - `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql` — sxema, seed va eski baza migratsiyalari.
 
@@ -70,6 +71,7 @@ Oxirgi audit: **2026-10-21**. Joriy ish va backlog — [tz.md](tz.md), uzoq mudd
 - `out/` da `index.html` bo‘lmagan project slug `/{locale}/projects/view/?slug=...` ga rewrite qilinadi; per-slug statik rewrite qo‘shmang (loop).
 - Boshqa noma’lum URL haqiqiy HTTP 404 va `404.html` oladi; SPA catch-all yo‘q.
 - `database/` va `backend/` HTTP’dan yopilgan; admin URL’lariga `X-Robots-Tag: noindex, nofollow`.
+- Static javoblarga CSP (`script-src` Telegram widget uchun), HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP/CORP va `X-Permitted-Cross-Domain-Policies` qo‘shiladi. API ham PHP orqali shu headerlarni beradi; `X-Powered-By` olib tashlangan.
 
 ## Content API (`api.php` + MySQL)
 
@@ -82,9 +84,10 @@ Envelope: `{status:"ok",data:...}` yoki `{status:"error",message,code}`.
 - Noto‘g‘ri `lang` → `uz`. Topilmagan slug → `404 {status:"error",code:"project_not_found"}`.
 - DB sozlanmagan yoki ulanmagan → `503 {status:"error",code:"db_unavailable"}`. Frontend statik fallback’ga qaytadi.
 - `GET /api.php/websites` — `X-Api-Token` yoki `Authorization: Bearer`; noto‘g‘ri bo‘lsa 401.
+- `POST /api.php/bot/webhook` — shaxsiy Telegram bot webhook’i; `X-Telegram-Bot-Api-Secret-Token`, numeric admin ID va faqat `message` update’lari. `/help`, `/inbox`, `/read <uid>`, `/send <to> | <subject> | <body>`; OTP yoki bot token Telegram’ga yuborilmaydi.
 - `POST /api.php/form_container/submit` — contact form, token talab qilmaydi; `id=contact` native handler orqali `contact_messages`ga saqlanadi (validatsiya, `website` honeypot va IP bo‘yicha 10 daqiqada 5 ta limit). Boshqa `id`lar `form_<id>[ed-f-N]` Sitejet contractiga uzatiladi.
 - Boshqa yo‘llar `https://api.sitehub.io` ga proxy; `/images*` → `https://inter-cdn.com`.
-- Token tartibi: `API_TOKEN` → `SITEHUB_API_TOKEN` → `OTABOYEV_API_TOKEN`; `otaboyev-dev-token` fallback faqat `APP_ENV=local|development|test` bo‘lganda, productionda esa haqiqiy env token majburiy.
+- Token tartibi: `API_TOKEN` → `SITEHUB_API_TOKEN` → `OTABOYEV_API_TOKEN`; `otaboyev-dev-token` fallback faqat `APP_ENV=local|development|test` bo‘lganda. Agar `/websites` ishlatilsa, productionda haqiqiy env token majburiy; hozircha token yo‘q va endpoint ataylab `401`.
 - `api.php` va `backend/*.php` “Compatible with PHP 7.1” — arrow fn, typed properties va boshqa 7.4+ sintaksisni qo‘shmang.
 
 ### Ma’lumotlar bazasi
@@ -94,6 +97,7 @@ Envelope: `{status:"ok",data:...}` yoki `{status:"error",message,code}`.
 - `database/seed.sql` — 1 profil, 3 loyiha va 9 tarjima (uz/en/ru).
 - Yangi o‘rnatish `schema.sql` dan oladi; eski bazaga `database/migrate-project-sections.sql` bir marta, `database/migrate-contact-messages.sql` esa idempotent tarzda qo‘llanadi. `seed.sql` faqat standart kontentni tiklash uchun qayta import qilinadi — u mavjud admin tahrirlarini bosib ketadi. `migrate-project-sections.sql` idempotent emas.
 - `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql` va `database/migrate-contact-messages.sql` versiyalanadi (`*.sql` ignore’dan istisno). `database/` web’dan `.htaccess` bilan yopilgan; `out/` ga ko‘chirilmaydi.
+- Production DB user’ga faqat `SELECT, INSERT, UPDATE, DELETE` beriladi; `CREATE`/`ALTER`/`DROP` migratsiya vaqtida vaqtincha qo‘shiladi. Hozirgi baza `host9590_portfolio` shu least-privilege bilan ishlaydi.
 
 ## Admin auth va xavfsizlik
 
@@ -106,6 +110,8 @@ Envelope: `{status:"ok",data:...}` yoki `{status:"error",message,code}`.
 - Admin route’lar: `GET /api.php/admin/config`, `GET /api.php/admin/auth/telegram`, `GET /api.php/admin/auth/status`, `POST /api.php/admin/auth/verify`, `POST /api.php/admin/auth/resend`, `GET /api.php/admin/session[?optional=1]`, `POST /api.php/admin/logout`, `GET/PUT /api.php/admin/profile`, `GET/POST /api.php/admin/projects`, `GET/PUT/DELETE /api.php/admin/projects/{id}`, `GET /api.php/admin/messages[?count=1|unread=1]`, `GET/PUT/DELETE /api.php/admin/messages/{id}`, `POST /api.php/admin/sitemap`, `GET/POST /api.php/admin/admins`, `GET/PUT/DELETE /api.php/admin/admins/{id}`.
 - Inbox/sitemap/admin-user mutation’lari session + CSRF talab qiladi. O‘z admin hisobini o‘chirish/deaktiv qilish va oxirgi faol adminni olib tashlash `422` bilan bloklanadi; sitemap yozilmasa `500 sitemap_write_failed`.
 - Admin project slug’i `view` bo‘lishi mumkin emas — u fallback route bilan to‘qnashadi.
+- Bot ko‘prigi alohida shaxsiy kanal: webhook secret, `admin.telegram_id` allowlist va Telegram `secret_token` bilan himoyalangan; bot token, OTP va email parollari Telegram’ga chiqmaydi. cPanel IMAP hosti `panel2.eskiz.uz:993/imap/ssl`; `mail.otaboyev-sardorbek.uz` sertifikat hostname’iga mos kelmaydi.
+- Production cPanel’da `admin@otaboyev-sardorbek.uz` (OTP/inbox) va `no-reply@...` (yuborish) mailbox’lari, `contact@...` → `admin@...` forwarder’i ishlatiladi. `admin.phone` faqat config’da; hozircha public UI yoki DB maydoni emas.
 
 ## Til almashtirish — birga o‘zgaradi
 
@@ -129,8 +135,9 @@ Matn o‘zgarsa — 3 tilda ham. `id`, `class`, `name`, `data-*` tarjima qilinma
 5. API: profile/projects/detail (uz/en/ru, invalid lang, 404 slug, DB yo‘q → 503).
 6. Contact formani yuborib ko‘r (Network’da `/api.php/form_container/submit`); DB’da `contact_messages` yozuvi, admin panelda xabar, `website` honeypot va 6-chi so‘rovda `429` tekshiriladi.
 7. Admin: `/admin/` config `enabled`; Telegram callback → challenge cookie → email kod (lokalda `log`) → session; noto‘g‘ri OTP, expired challenge/session, CSRF yo‘qligi, admin CORS header yo‘qligi; dashboard headless xatosiz; inbox read/unread/delete; admin qo‘shish/tahrirlash/o‘chirish va self/last-admin himoyasi; sitemap yangilash.
-8. Apache’da `/de/` va `/nope` → `404` + `404.html`; `/api.php/health` → 200.
-9. `git diff --check` va `git diff --stat`.
+8. Bot: webhook secret yo‘q/noto‘g‘ri → `403`; GET → `405`; ruxsat etilgan admin ID bilan `/help`, `/inbox`, `/read <uid>`, `/send ...`; yuborilgan email `admin@` mailbox’iga tushishi; `getWebhookInfo` `pending_update_count=0`.
+9. Apache’da `/de/` va `/nope` → `404` + `404.html`; `/api.php/health` → 200.
+10. `git diff --check` va `git diff --stat`.
 
 GitHub bo‘limi tashqi `api.github.com` ga bog‘liq (tokensiz, rate limit bor) — offline fallback xato emas.
 
@@ -141,12 +148,13 @@ GitHub bo‘limi tashqi `api.github.com` ga bog‘liq (tokensiz, rate limit bor)
 - Generic detail route’ning statik metadata/canonical’i listing’ga ishora qiladi; client JS keyin haqiqiy URL’ga yangilaydi.
 - `{uz,en,ru}/projects/<slug>/index.html` legacy nusxalari repo’da qoladi, lekin `out/` da servis qilinmaydi; ularni tahrirlash saytga ta’sir qilmaydi.
 - `en/*` legacy Sitejet sahifalari uz/ru muqobilisiz; `out/` ga ko‘chirilmaydi va sitemap’da yo‘q. Ulardagi canonical domeni xato (`otaboyevsardorbek.uz`).
-- Contact form native handler DB’ga yozadi; DB yoki `contact_messages` jadvali bo‘lmasa forma `503` qaytaradi va frontend `mailto` fallback’ga o‘tadi. Email yuborish hali alohida tekshirilmagan; inbox asosiy manba.
+- Contact form native handler DB’ga yozadi; DB yoki `contact_messages` jadvali bo‘lmasa forma `503` qaytaradi va frontend `mailto` fallback’ga o‘tadi. Contact form email yubormaydi; `contact@` forwarder’i va admin inbox asosiy manba.
 - Media upload (avatar/loyiha rasmlari) va `en/*` legacy sahifalarini tarjima qilish hali yo‘q — owner qarori kerak.
 - Admin panel UI matnlari hozircha o‘zbekcha; sayt matnlari uz/en/ru.
-- 2026-10-21 holat: Telegram bot (`@otaboyev_sardorbek_uz_bot`), `SITE_URL`, admin Telegram ID va `APP_SECRET` gitignored `config.local.php` da sozlangan. cPanel DB credential’lari va email yetkazib berish hali tekshirilmagan; DB bo‘lmasa content API 503, admin CRUD ishlamaydi.
-- Telegram Login Widget lokal HTTP’da ishlamaydi; BotFather’da `/setdomain otaboyev-sardorbek.uz` bajarilgani va HTTPS production testi kerak.
-- 2026-10-21 holat: migration kodi va hujjatlar `origin/main` ga push qilindi. `out/` gitignored. `CodeAnalyzer_v2.py` va bo‘sh `README` ataylab commit qilinmagan — ular repo ishiga aloqasi yo‘q.
+- 2026-10-22 holat: cPanel MySQL (`host9590_portfolio`), `config.local.php`, mailboxes (`admin@`, `no-reply@`), `contact@` forwarder, Telegram bot (`@otaboyev_sardorbek_uz_bot`), webhook secret va HTTPS production ishlaydi. API/admin/bot smoke testlari o‘tgan.
+- Email: SPF external DNS’da `pass`; DKIM external DNS’da yo‘q va Exim hozir imzolamaydi; DMARC external `v=DMARC1; p=none;`. cPanel/WHM yoki Eskiz DNS’ga kirish bo‘lmasa DKIM/DMARC’ni yakunlash mumkin emas — provider amali kerak. Port25 hisoboti `SPF pass`, `DKIM none` ko‘rsatgan.
+- Telegram Login Widget lokal HTTP’da ishlamaydi; BotFather’da `/setdomain otaboyev-sardorbek.uz` bajarilgani va haqiqiy Telegram Login testi hali tasdiqlanmagan. Bot webhook’i fake update bilan sinalgan; haqiqiy admin xabari alohida yuborilishi kerak.
+- 2026-10-22 holat: migration kodi va hujjatlar `origin/main` ga push qilindi. `out/` gitignored. `CodeAnalyzer_v2.py` va bo‘sh `README` ataylab commit qilinmagan — ular repo ishiga aloqasi yo‘q.
 - `github_keys.txt` — maxfiy va `.gitignore` da. O‘qimang, commit qilmang. Bo‘sh `README` va `CodeAnalyzer_v2.py` repo ishiga aloqasi yo‘q.
 
 ## Qoidalar
@@ -175,6 +183,7 @@ GitHub bo‘limi tashqi `api.github.com` ga bog‘liq (tokensiz, rate limit bor)
 | `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql` | MySQL sxema, seed va eski baza migratsiyalari |
 | `backend/config.php`, `backend/content.php`, `backend/contact.php` | content API, DB sozlamalari va contact inbox |
 | `backend/admin.php`, `backend/mailer.php` | admin auth/session/CRUD/inbox/sitemap/admins; email delivery |
+| `backend/bot.php`, `config.local.example.php` | Telegram email bridge (webhook, IMAP, `/send`), bot/IMAP/phone config |
 | `app/admin/`, `components/admin/`, `css/admin.css` | admin UI, inbox va admin-user manager |
 | `SECURITY.md` | top 20 xavfsizlik nazorati va cPanel checklist |
 | `css/portfolio.css`, `js/portfolio.js` | umumiy CSS; legacy JS |
