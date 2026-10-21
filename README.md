@@ -39,7 +39,7 @@ Loyiha tuzilishi:
 npm ci
 npm run build
 ```
-Natija `out/` papkasida: 3 bosh sahifa, 3 loyihalar ro‘yxati, 9 project detail sahifa, 3 admin sahifa, CSS/JS, CV fayllar, `api.php` va `backend/`. Project detail sahifalar Next.js tomonidan generatsiya qilinadi; admin yaratgan yangi slug Apache rewrite orqali `/projects/view/?slug=...` fallback’ida ochiladi.
+Natija `out/` papkasida: 3 bosh sahifa, 3 loyihalar ro‘yxati, 9 project detail sahifa, 3 admin sahifa, CSS/JS, CV fayllar, `api.php`, `backend/` va mavjud bo‘lsa `config.local.php`. Project detail sahifalar Next.js tomonidan generatsiya qilinadi; admin yaratgan yangi slug Apache rewrite orqali `/projects/view/?slug=...` fallback’ida ochiladi.
 
 ### 2. MySQL (content API uchun)
 cPanel yoki lokal MySQL’da baza yarating va sxemani import qiling:
@@ -143,6 +143,7 @@ return array(
     ),
 );
 ```
+`config.local.php` mavjud bo‘lsa, `npm run build` uni `out/config.local.php` ga ham ko‘chiradi (fayl `chmod 600` bo‘lsin).
 
 Secret yaratish:
 

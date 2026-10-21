@@ -10,7 +10,7 @@
 - Detail pages: build-time fallback from `content/locales.js`, then refresh from `/api.php/projects/{slug}?lang=...`; title, meta description and canonical are updated client-side.
 - Admin-created projects: `.htaccess` rewrites unknown `/{locale}/projects/<slug>/` URLs to `/{locale}/projects/view/?slug=...`; the client fetches the API and updates canonical.
 - Backend: PHP `api.php` + `backend/*.php`; MySQL content API, contact form, Sitejet proxy and protected `/admin/` CRUD.
-- Auth: Telegram Login Widget → email OTP → session with CSRF; admin routes are noindex and have no wildcard CORS.
+- Auth: Telegram Login Widget → email OTP → session with CSRF; admin routes are noindex and have no wildcard CORS. The bot, `SITE_URL`, admin Telegram ID and `APP_SECRET` are set in gitignored `config.local.php`; DB and email delivery still need production verification.
 - DB: `database/schema.sql` + `database/seed.sql` seed 1 profile, 3 projects and 9 translations; existing databases need `database/migrate-project-sections.sql`. Re-importing `seed.sql` resets content and overwrites admin edits.
 - SEO: `sitemap.xml` has the 15 real URLs; canonical/hreflang exists on 3 homes, 3 listings and 9 detail pages.
 - Last verified: `npm run check` and `npm run build` pass; API returns 200/404/503 as expected; admin CRUD and headless UI work; Apache serves the generic detail fallback.
@@ -19,7 +19,7 @@
 
 The implemented architecture is coherent: static Next pages, a PHP-only runtime backend, a DB-backed content API and a working two-step admin login. No blocking defect was found in the audited page/API/auth paths. The main risks are operational, not architectural:
 
-- production credentials and DNS are still missing;
+- the Telegram bot/domain/admin ID and app secret are configured locally, but cPanel DB credentials and email DNS/verification are still missing;
 - the migration and documentation are committed and pushed to `origin/main`;
 - admin-created slugs are outside the sitemap and the static detail fallback is not crawler-fresh;
 - contact messages have no storage/inbox yet.
@@ -51,7 +51,7 @@ None. Migration and documentation are committed and pushed. The next action is p
 
 | Prio | Problem | Evidence / where | Next action |
 |---|---|---|---|
-| P1 | Production DB, Telegram, email and app-secret settings are missing | `config.local.php` / env; `backend/config.php` | Create the cPanel DB; import schema/seed for a fresh DB or run the migration for an existing one; write gitignored config; set `APP_SECRET`, bot token/username, admin Telegram ID and mail driver |
+| P1 | cPanel DB credentials and email delivery are not configured | `config.local.php` / env; `backend/config.php` | Create the cPanel DB; import schema/seed for a fresh DB or run the migration for an existing one; fill the DB credentials in gitignored `config.local.php`; verify the `mail`/SMTP path and BotFather `/setdomain`; test `/admin/` on HTTPS |
 | P2 | Contact messages are not stored in MySQL and there is no admin inbox | `api.php` form handler | Add `contact_messages` and a read-only admin inbox without breaking the Sitejet form contract; owner decision required |
 | P2 | `en/*` legacy Sitejet pages have no uz/ru counterparts | `en/portfolio`, `en/tech-stack`, … | Owner decision: keep and translate, or remove from the repo/sitemap |
 | P2 | Only the bootstrap admin exists; extra admins need a manual DB insert | `admin_users` | Decide whether to add a small admin-management UI |
@@ -120,6 +120,6 @@ When architecture, routes, schema, deploy steps or security behavior change, upd
 
 ## Next actions
 
-1. Create production `config.local.php`/env, import schema/seed (or run the migration on an existing DB), configure BotFather and mail DNS, deploy `out/`, and test `/admin/` on HTTPS.
+1. Fill the cPanel DB credentials in `config.local.php`, import schema/seed (or run the migration on an existing DB), verify email delivery and BotFather `/setdomain`, deploy `out/`, and test `/admin/` on HTTPS.
 2. Decide the P2 owner questions: contact inbox, extra admins and the `en/*` legacy pages.
 3. Re-run `npm run check && npm run build` after any final edit.

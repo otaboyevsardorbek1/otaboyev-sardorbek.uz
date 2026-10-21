@@ -10,7 +10,7 @@ Oxirgi audit: **2026-10-21**. Joriy ish va backlog — [tz.md](tz.md), uzoq mudd
 |---|---|
 | Dependency o‘rnatish | `npm install` (yoki `npm ci`) |
 | Next dev server | `npm run dev` — API yo‘q; frontend statik fallback bilan ishlaydi |
-| Static export | `npm run build` → `out/`; postbuild `files/`, `js/`, `css/`, `favicon.svg`, `api.php`, `backend/`, `.htaccess`, `sitemap.xml` ni ko‘chiradi |
+| Static export | `npm run build` → `out/`; postbuild `files/`, `js/`, `css/`, `favicon.svg`, `api.php`, `backend/`, mavjud bo‘lsa `config.local.php`, `.htaccess`, `sitemap.xml` ni ko‘chiradi |
 | CI | `.github/workflows/ci.yml` — push/PR’da `npm ci`, `npm run check`, `npm run build` va export fayllarini tekshiradi |
 | Export preview | `DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out` |
 | Sintaksis tekshiruvi | `npm run check` — `php -l api.php`, backend fayllari, `node --check js/portfolio.js`; JSX ni `npm run build` tekshiradi |
@@ -139,8 +139,8 @@ GitHub bo‘limi tashqi `api.github.com` ga bog‘liq (tokensiz, rate limit bor)
 - `en/*` legacy Sitejet sahifalari uz/ru muqobilisiz; `out/` ga ko‘chirilmaydi va sitemap’da yo‘q. Ulardagi canonical domeni xato (`otaboyevsardorbek.uz`).
 - `.htaccess` catch-all noma’lum URL’ni 404 o‘rniga `/index.html` ga yuboradi.
 - Contact form xabarlari MySQL’ga saqlanmaydi; admin inbox, media upload va multi-admin UI hali yo‘q.
-- Production DB/Telegram/email credential’lari hali berilmagan; `config.local.php` yozilmaguncha content API 503, admin auth `enabled:false` yoki email yuborilmaydi.
-- Telegram Login Widget lokal HTTP’da ishlamaydi; BotFather’da `/setdomain otaboyev-sardorbek.uz` va HTTPS production testi kerak.
+- 2026-10-21 holat: Telegram bot (`@otaboyev_sardorbek_uz_bot`), `SITE_URL`, admin Telegram ID va `APP_SECRET` gitignored `config.local.php` da sozlangan. cPanel DB credential’lari va email yetkazib berish hali tekshirilmagan; DB bo‘lmasa content API 503, admin CRUD ishlamaydi.
+- Telegram Login Widget lokal HTTP’da ishlamaydi; BotFather’da `/setdomain otaboyev-sardorbek.uz` bajarilgani va HTTPS production testi kerak.
 - 2026-10-21 holat: migration kodi va hujjatlar `origin/main` ga push qilindi. `out/` gitignored. `CodeAnalyzer_v2.py` va bo‘sh `README` ataylab commit qilinmagan — ular repo ishiga aloqasi yo‘q.
 - `github_keys.txt` — maxfiy va `.gitignore` da. O‘qimang, commit qilmang. Bo‘sh `README` va `CodeAnalyzer_v2.py` repo ishiga aloqasi yo‘q.
 
