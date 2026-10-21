@@ -307,7 +307,6 @@ export default function Home({ locale, copy }) {
       body: data,
       headers: {
         Accept: 'text/html,application/json',
-        'X-Api-Token': 'otaboyev-dev-token',
       },
       credentials: 'same-origin',
     })

@@ -55,8 +55,7 @@ document.addEventListener('DOMContentLoaded', function () {
         method: 'POST',
         body: formData,
         headers: {
-          Accept: 'text/html,application/json',
-          'X-Api-Token': 'otaboyev-dev-token'
+          Accept: 'text/html,application/json'
         },
         credentials: 'same-origin'
       })
