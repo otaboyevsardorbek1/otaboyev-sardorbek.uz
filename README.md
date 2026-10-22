@@ -25,7 +25,7 @@ Loyiha tuzilishi:
 - Shaxsiy Telegram bot: IMAP inbox, xat o‘qish va cPanel orqali email yuborish (webhook secret + admin ID allowlist)
 - Profil va loyihalarni uch tilda tahrirlash (CRUD), audit log va CSRF himoyasi
 - Inbox (read/unread/delete), adminlar boshqaruvi va avtomatik `sitemap.xml`
-- CSP/HSTS/frame/referrer/COOP/CORP xavfsizlik headerlari; API `X-Powered-By` olib tashlangan
+- CSP/HSTS/frame/referrer/COOP/CORP xavfsizlik headerlari; `api.php` HSTS’ni faqat HTTPS’da yuboradi; API `X-Powered-By` olib tashlangan
 - Haqiqiy 404 sahifa va Apache/Nginx routing
 - Responsive premium dark glassmorphism dizayn
 - Lokalizatsiya va sahifalar orasidagi navigatsiya
@@ -43,7 +43,7 @@ Loyiha tuzilishi:
 npm ci
 npm run build
 ```
-Natija `out/` papkasida: 3 bosh sahifa, 3 loyihalar ro‘yxati, 9 project detail sahifa, 3 admin sahifa, CSS/JS, CV fayllar, `api.php`, `backend/` va mavjud bo‘lsa `config.local.php`. Project detail sahifalar Next.js tomonidan generatsiya qilinadi; admin yaratgan yangi slug Apache rewrite orqali `/projects/view/?slug=...` fallback’ida ochiladi.
+Natija `out/` papkasida: 3 bosh sahifa, 3 loyihalar ro‘yxati, 9 project detail sahifa, 3 admin sahifa, CSS/JS, CV fayllar, `api.php`, `backend/`, `.htaccess` va `sitemap.xml`. `config.local.php` build artefaktiga **qo‘shilmaydi**; uni web rootga qo‘lda `600` bilan qo‘ying. Project detail sahifalar Next.js tomonidan generatsiya qilinadi; admin yaratgan yangi slug Apache rewrite orqali `/projects/view/?slug=...` fallback’ida ochiladi.
 
 ### 2. MySQL (content API uchun)
 cPanel yoki lokal MySQL’da baza yarating va sxemani import qiling:
@@ -55,6 +55,8 @@ mysql -u USER -p DB_NAME < database/seed.sql
 # mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
 # Contact inbox jadvali uchun (idempotent):
 # mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
+# Telegram bot guard jadvallari uchun (idempotent):
+# mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
 # seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
 # u mavjud admin tahrirlarini bosib ketadi.
 ```
@@ -136,7 +138,7 @@ Productionda `contact@otaboyev-sardorbek.uz` → `admin@otaboyev-sardorbek.uz` f
 
 ### 3. Telegram bot email bridge
 
-`backend/bot.php` private webhook rejimida ishlaydi va faqat `admin.telegram_id` ga ruxsat beradi. Bot token, webhook secret yoki OTP Telegram’ga yuborilmaydi.
+`backend/bot.php` private webhook rejimida ishlaydi va faqat `admin.telegram_id` ga ruxsat beradi. Bot token, webhook secret yoki OTP Telegram’ga yuborilmaydi. Har bir `update_id` `bot_updates_seen`da bir marta qayd etiladi (Telegram retry’da `/send` ikki marta bajarilmaydi); `/inbox` 10/min, `/read` 20/min, `/send` 10/min bilan cheklangan (`bot_rate_limit`). Bu jadvallar `database/migrate-bot-guards.sql` bilan qo‘shiladi; jadval bo‘lmasa bot ishlashda davom etadi, lekin guard’lar o‘chiq qoladi.
 
 1. `config.local.php` da `bot.webhook_secret` (kamida 32 belgi), `bot.imap_user` va `bot.imap_pass` ni to‘ldiring.
 2. cPanel IMAP hosti sifatida `panel2.eskiz.uz:993/imap/ssl` ishlatiladi. `mail.otaboyev-sardorbek.uz` sertifikat hostname’iga mos kelmaydi.
@@ -198,7 +200,7 @@ return array(
     ),
 );
 ```
-`config.local.php` mavjud bo‘lsa, `npm run build` uni `out/config.local.php` ga ham ko‘chiradi (fayl `chmod 600` bo‘lsin).
+`npm run build` `config.local.php` ni `out/` ga **ko‘chirmaydi** — u build artefaktida bo‘lmasligi kerak. Lokal preview uchun `./run_local.sh` va `./run_server.sh` uni `out/` ga `600` bilan nusxalaydi; productionda esa web rootga qo‘lda `chmod 600` bilan joylashtiring. Fayl gitignored va `.htaccess` bilan HTTP’dan yopilgan.
 
 Secret yaratish:
 
@@ -217,6 +219,8 @@ mysql -u USER -p DB_NAME < database/seed.sql
 # mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
 # Contact inbox jadvali uchun (idempotent):
 # mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
+# Telegram bot guard jadvallari uchun (idempotent):
+# mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
 # seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
 # u mavjud admin tahrirlarini bosib ketadi.
 ```
@@ -243,11 +247,11 @@ So‘ng `/admin/` ni oching. Birinchi muvaffaqiyatli Telegram callback `ADMIN_TE
 | `GET/POST /api.php/admin/admins` | adminlar ro‘yxati / yangi admin |
 | `GET/PUT/DELETE /api.php/admin/admins/{id}` | adminni o‘qish/tahrirlash/o‘chirish |
 
-`POST`, `PUT`, `DELETE` so‘rovlarida `X-CSRF-Token` header majburiy. Admin endpointlar CORS header qaytarmaydi; ular faqat same-origin uchun. Sitemap fayli web rootda PHP yoza oladigan bo‘lishi kerak; aks holda `500 sitemap_write_failed` qaytadi.
+`POST`, `PUT`, `DELETE` so‘rovlarida `X-CSRF-Token` header majburiy. Admin endpointlar CORS header qaytarmaydi; ular faqat same-origin uchun. `Origin`/`Referer` `site_url` bilan strict host/scheme/port bo‘yicha solishtiriladi; `Origin: null` rad etiladi. Ikkala header bo‘lmasa (CLI) `X-Requested-With: XMLHttpRequest` talab qilinadi. Sitemap fayli web rootda PHP yoza oladigan bo‘lishi kerak; aks holda `500 sitemap_write_failed` qaytadi.
 
 ### Xavfsizlik
 
-To‘liq nazorat ro‘yxati: [SECURITY.md](SECURITY.md). Qisqasi: Telegram HMAC, `auth_date` oynasi, hashed OTP, HttpOnly/Secure/SameSite cookie, CSRF, rate limit, audit log, PDO prepared statement, `.htaccess` CSP/HSTS, `config.local.php` himoyasi.
+To‘liq nazorat ro‘yxati: [SECURITY.md](SECURITY.md). Qisqasi: Telegram HMAC, `auth_date` oynasi, hashed OTP, HttpOnly/Secure/SameSite cookie, CSRF, strict origin tekshiruvi, rate limit (admin, form va bot), audit log, PDO prepared statement, `display_errors=0` + log, `.htaccess` CSP/HSTS, `config.local.php` himoyasi. Wildcard CORS faqat public read-only JSON endpointlarda; admin/form/bot/token endpointlarda CORS yo‘q.
 
 ## Production server sozlamasi
 
@@ -353,7 +357,7 @@ npm run build
 ### cPanel deploy
 
 1. cPanel → **MySQL Databases**: baza va foydalanuvchi yarating, foydalanuvchiga bazaga ruxsat bering.
-2. phpMyAdmin → **Import**: yangi baza uchun `database/schema.sql`, keyin `database/seed.sql`; eski bazada avval `database/migrate-project-sections.sql`, keyin `database/migrate-contact-messages.sql` ni import qiling. `seed.sql` mavjud admin tahrirlarini bosib ketadi.
+2. phpMyAdmin → **Import**: yangi baza uchun `database/schema.sql`, keyin `database/seed.sql`; eski bazada avval `database/migrate-project-sections.sql`, keyin `database/migrate-contact-messages.sql` va `database/migrate-bot-guards.sql` (idempotent) ni import qiling. `seed.sql` mavjud admin tahrirlarini bosib ketadi.
 3. `config.local.example.php` dan `config.local.php` yarating; DB, Telegram, email va `app_secret` ni to‘ldiring.
 4. Lokalda yoki Node mavjud muhitda `npm ci && npm run build`.
 5. `out/` ichidagi barcha fayllarni cPanel **File Manager** orqali `public_html/` ga yuklang. `out/` papkasining o‘zini emas, ichidagi `api.php`, `backend/`, `.htaccess`, `index.html`, `admin/`, `uz/`, `en/`, `ru/`, `_next/`, `files/` ni yuklang.
@@ -552,6 +556,8 @@ mysql -u USER -p DB_NAME < database/seed.sql
 # mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
 # Contact inbox jadvali uchun (idempotent):
 # mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
+# Telegram bot guard jadvallari uchun (idempotent):
+# mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
 # seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
 # u mavjud admin tahrirlarini bosib ketadi.
 ```

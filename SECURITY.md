@@ -28,10 +28,10 @@ Bot bridge alohida: `POST /api.php/bot/webhook` Telegram `X-Telegram-Bot-Api-Sec
 | 8 | Telegram soxta callback | Bot token asosidagi HMAC tekshiruvi; `hash_equals`; `auth_date` oynasi; faqat raqamli Telegram ID. |
 | 9 | Ruxsatsiz admin | `admin_users.is_active` + Telegram allowlist; begona Telegram akkaunt `unauthorized` ga yo‘naltiriladi. |
 | 10 | IDOR | Har bir admin endpoint session talab qiladi; project ID faqat autentifikatsiyadan keyin ishlatiladi. |
-| 11 | CORS suiiste’moli | Admin va bot endpointlarga `Access-Control-Allow-Origin` berilmaydi; public API’da `*` qoladi, lekin cookie ishlatilmaydi. |
+| 11 | CORS suiiste’moli | Admin, bot, form va token endpointlarga `Access-Control-Allow-Origin` berilmaydi; wildcard `*` faqat public read-only JSON endpointlarda (`profile`, `projects`, `health`, `status`); cookie ishlatilmaydi. |
 | 12 | Clickjacking | `.htaccess`: `X-Frame-Options: DENY` va CSP `frame-ancestors 'none'`. |
 | 13 | MIME sniffing / browser policy | `X-Content-Type-Options: nosniff`, CSP, `Referrer-Policy`, `Permissions-Policy`, COOP/CORP va `X-Permitted-Cross-Domain-Policies`; API’da `X-Powered-By` olib tashlangan. |
-| 14 | HTTPS downgrade | `.htaccess` HTTP’ni canonical HTTPS hostga 301 qiladi (localhost/127.0.0.1 bundan mustasno); `Strict-Transport-Security: max-age=31536000`; cPanel AutoSSL/Force HTTPS ham yoqilgan. |
+| 14 | HTTPS downgrade | `.htaccess` HTTP’ni canonical HTTPS hostga 301 qiladi (localhost/127.0.0.1 bundan mustasno); `Strict-Transport-Security: max-age=31536000` (api.php faqat HTTPS’da yuboradi); cPanel AutoSSL/Force HTTPS ham yoqilgan. |
 | 15 | Secret leakage | `config.local.php`, `.env` va `github_keys.txt` gitignored; `.htaccess` ularni, source papkalarni, `.sql`/`.log`/`.md` va nested hidden fayllarni HTTP’dan to‘sadi; bot token, webhook secret, IMAP paroli va app secret hech qachon frontendga chiqmaydi. |
 | 16 | Email header injection | Email, From, Reply-To va subject qiymatlari `\r`, `\n`, `\0` dan tozalanadi; recipient `FILTER_VALIDATE_EMAIL` bilan tekshiriladi; legacy email HTML va CSV formula injection’dan himoyalangan. |
 | 17 | Open redirect / XSS | Telegram callback faqat qat’iy `/admin/verify/` yoki `/admin/?error=...` manziliga yo‘naltiradi; legacy form redirect faqat `http(s)` yoki relative path qabul qiladi. |
@@ -39,7 +39,7 @@ Bot bridge alohida: `POST /api.php/bot/webhook` Telegram `X-Telegram-Bot-Api-Sec
 | 19 | Audit yo‘qligi | `admin_auth_events` va `admin_audit_log`: login, logout, profile/project o‘zgarishlari, IP hash. |
 | 20 | Eski sessiya / challenge to‘planishi | Muddati o‘tgan session/challenge va 7 kundan eski auth eventlar opportunistik tozalanadi. |
 
-Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `display_errors` productionda o‘chirilgan bo‘lishi kerak, MySQL foydalanuvchisiga faqat kerakli bazaga ruxsat beriladi, `database/` va `backend/` HTTP’dan yopiladi.
+Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `api.php` `display_errors=0` va `log_errors` ni majburiy qiladi, MySQL foydalanuvchisiga faqat kerakli bazaga ruxsat beriladi, `database/` va `backend/` HTTP’dan yopiladi. Production PHP 8.1+ tavsiya etiladi.
 
 ## Telegram bot bridge
 
@@ -47,6 +47,7 @@ Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `display_errors` productionda o‘ch
 - Telegram `secret_token` bilan `X-Telegram-Bot-Api-Secret-Token` solishtiriladi (`hash_equals`); secret kamida 32 belgi.
 - Update’dagi `from.id` va `chat.id` `admin.telegram_id`ga teng bo‘lishi shart; boshqa foydalanuvchi e’tiborsiz qoldiriladi.
 - `/inbox` va `/read` faqat `admin@otaboyev-sardorbek.uz` IMAP qutisini o‘qiydi; `/send` `no-reply@` orqali cPanel `mail()` bilan yuboradi.
+- Har bir `update_id` `bot_updates_seen`da bir marta qayd etiladi; Telegram retry’da `/send` takrorlanmaydi. `/inbox` 10/min, `/read` 20/min, `/send` 10/min (`bot_rate_limit`).
 - Bot token, OTP, app secret, IMAP/SMTP parollari javob yoki logga chiqarilmaydi. Webhook URL public, ammo secret va allowlist bo‘lmasa amal bajarilmaydi.
 - BotFather’da command’lar `setMyCommands` bilan ro‘yxatga olingan; webhook `allowed_updates=["message"]`.
 
@@ -74,7 +75,7 @@ Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `display_errors` productionda o‘ch
    - Email Deliverability bo‘limida SPF, DKIM, DMARC holatini tekshiring. Hozirgi serverda SPF `pass`, DKIM `none`, DMARC `p=none`; DKIM signing uchun root/WHM yoki provider amali kerak.
    - `ADMIN_MAIL_DRIVER=mail` (cPanel local) yoki `smtp`/`resend`/`brevo` tanlang.
 4. **App secret**: `php -r "echo bin2hex(random_bytes(32));"` bilan 64 belgili hex yarating.
-5. **MySQL**: yangi baza uchun `schema.sql` va `seed.sql` import qiling; mavjud bazada avval `database/migrate-project-sections.sql` ni qo‘llang. `seed.sql` mavjud admin tahrirlarini bosib ketishini unutmang. Importdan keyin DB user’ga faqat `SELECT, INSERT, UPDATE, DELETE` bering; migratsiya uchun `CREATE`/`ALTER`/`DROP` ni vaqtincha qo‘shing.
+5. **MySQL**: yangi baza uchun `schema.sql` va `seed.sql` import qiling; mavjud bazada avval `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql` va `database/migrate-bot-guards.sql` ni qo‘llang. `seed.sql` mavjud admin tahrirlarini bosib ketishini unutmang. Importdan keyin DB user’ga faqat `SELECT, INSERT, UPDATE, DELETE` bering; migratsiya uchun `CREATE`/`ALTER`/`DROP` ni vaqtincha qo‘shing.
 6. **Config**: `config.local.example.php` dan `config.local.php` yarating, lekin uni git’ga qo‘shmang. `/websites` endpointidan foydalansangiz, hosting environment’ida `API_TOKEN` ni ham o‘rnating.
 7. **Deploy**: `out/` tarkibini web rootga ko‘chiring; `backend/`, `config.local.php`, `.htaccess` joyida bo‘lsin; `github_keys.txt` web rootga ko‘chirilmasin.
 8. **Tekshirish**: `/admin/` ni HTTPS’da oching, Telegram widget’ni bosing, email kodni kiriting, profile va project saqlang.
@@ -93,8 +94,13 @@ Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `display_errors` productionda o‘ch
 - [ ] DKIM external DNS’da va Exim’da imzolash; DMARC `p=none` (provider/WHM amali kerak).
 - [x] MySQL `admin_users` jadvalida faqat kerakli admin bor; DB user least-privilege.
 - [x] HTTPS majburiy; HSTS, CSP, `X-Frame-Options: DENY` va boshqa headerlar javobda ko‘rinadi.
-- [x] `out/` ichida `config.local.php` bo‘lsa ham u HTTP’dan olinmaydi.
+- [x] `out/` build’ida `config.local.php` **yo‘q**; web rootga qo‘lda `600` bilan qo‘yiladi.
+- [x] `api.php` `display_errors=0`, `log_errors` yoqilgan.
 - [x] Telegram bot webhook secret + numeric admin ID allowlist; `pending_update_count=0`.
+- [x] Bot `update_id` idempotency va `/inbox`/`/read`/`/send` rate limit (`bot_updates_seen`, `bot_rate_limit`).
+- [ ] Logrotate: `bot.log` va PHP error log 10 MB (cPanel).
+- [ ] Kunlik DB backup + tashqi nusxa (cPanel/S3).
+- [ ] Monitoring/alerting: admin login fail, webhook secret fail, DB/IMAP fail (tashqi monitor yoki `alert_admin()`).
 - [x] Bot IMAP `panel2.eskiz.uz:993/imap/ssl`; cPanel `mail()` orqali `/send` yetkazilgan.
 - [ ] Haqiqiy Telegram admin xabari bilan inbound webhook testi (fake update bilan sinalgan).
 - [x] SSH key passphrase rotated 2026-10-22; new value repo tashqarisida, mode 600.
@@ -115,28 +121,28 @@ Agar admin session yoki bot token oshkor bo‘lsa:
 
 # 🔒 Yangilangan `SECURITY.md` — `otaboyev-sardorbek.uz`
 
-> **Versiya:** 3.0
+> **Versiya:** 3.1
 > **Oxirgi yangilanish:** 2026-10-22
 > **Asos:** loyihaning haqiqiy `project_structure.json` tarkibi, `backend/*.php`, `api.php`, `config.local.php`, `.htaccess` va deploy skriptlari
 > **Ko‘rib chiqish davri:** har 90 kunda
 
 ---
 
-## ⚠️ 0. TEZKOR OGOHLANTIRISH — HOZIR BAJARILISHI SHART
+## ⚠️ 0. TEZKOR OGOHLANTIRISH — 2026-10-22 HOLATI
 
 Quyidagi zaifliklar `project_structure.json` dan **haqiqiy kod va maxfiy qiymatlar** orqali aniqlangan. Har biri **bir xil darajada kritik**:
 
 | # | Zaiflik | Fayl / joy | Darhol amal |
 |---|---------|-----------|-------------|
-| **C-1** | **GitHub PAT ochiq** | `github_keys.txt` → `ghp_NI37...ekefM` | **1 daqiqada** https://github.com/settings/tokens → **Revoke** → yangi token yaratib, **repo tashqarisiga** `chmod 600` bilan saqlang |
-| **C-2** | **`APP_SECRET` ochiq** | `config.local.php` → `bba2616b...c4ca316` | Darhol `php -r "echo bin2hex(random_bytes(32));"` bilan yangilang; barcha session/challenge bekor bo‘ladi |
-| **C-3** | **Bot token ochiq** | `config.local.php` → `8740153698:AAFc...DCWro` | BotFather → `/revoke` → yangi token → `setWebhook` yangi `secret_token` bilan |
-| **C-4** | **Admin email ochiq** | `config.local.php` → `otaboyevsardorbek1@gmail.com` | `ADMIN_EMAIL` ni `admin@otaboyev-sardorbek.uz` ga ko‘chirish; Gmail akkauntni zaxira sifatida saqlash |
-| **C-5** | **`config.local.php` `out/` ga nusxalanadi** | `scripts/copy-static.mjs` → `['config.local.php', 'config.local.php']` | `out/config.local.php` **deploy bo‘lishi bilan o‘chirilishi** yoki skriptdan **butunlay olib tashlanishi** shart |
-| **C-6** | **CORS `*` form endpoint’da** | `api.php` → `if (strpos($requestPath, '/admin') !== 0 && ...) header('Access-Control-Allow-Origin: *')` | `/form_container/submit` ni ham CORS `*` dan **chiqarish** |
-| **C-7** | **HSTS HTTP’da ham yuboriladi** | `api.php` → `header('Strict-Transport-Security: max-age=31536000')` | Faqat HTTPS bo‘lsa yuborilsin (Apache `.htaccess` buni to‘g‘ri qiladi, PHP esa yo‘q) |
+| **C-1** | **GitHub PAT ochiq** | `github_keys.txt` → `<redacted>` | **Owner:** https://github.com/settings/tokens → **Revoke** → yangi token yaratib, **repo tashqarisiga** `chmod 600` bilan saqlang. Fayl 600, gitignored, build/deploy’ga kirmaydi |
+| **C-2** | **`APP_SECRET` ochiq** | `config.local.php` → `<redacted>` | **Owner:** `php -r "echo bin2hex(random_bytes(32));"` bilan yangilang; barcha session/challenge bekor bo‘ladi. Fayl 600, gitignored, build’ga kirmaydi |
+| **C-3** | **Bot token ochiq** | `config.local.php` → `<redacted>` | **Owner:** BotFather → `/revoke` → yangi token → `setWebhook` yangi `secret_token` bilan |
+| **C-4** | **Admin email Gmail’da** | `config.local.php` → `<redacted>` | **Owner:** `ADMIN_EMAIL` ni `admin@otaboyev-sardorbek.uz` ga ko‘chirish; Gmail akkauntni zaxira sifatida saqlash |
+| **C-5** | **`config.local.php` `out/` ga nusxalanadi** | `scripts/copy-static.mjs` | ✅ **Fixed 2026-10-22:** build nusxalamaydi; `run_local.sh`/`run_server.sh` preview uchun `600` bilan nusxalaydi; CI `out/config.local.php` yo‘qligini tekshiradi |
+| **C-6** | **CORS `*` form endpoint’da** | `api.php` | ✅ **Fixed 2026-10-22:** wildcard CORS faqat `/profile`, `/projects`, `/projects/{slug}`, `/health`, `/status`; form/admin/bot/token endpointlarda CORS yo‘q |
+| **C-7** | **HSTS HTTP’da ham yuboriladi** | `api.php` | ✅ **Fixed 2026-10-22:** HSTS faqat HTTPS aniqlanganda yuboriladi; HTTP’da yo‘q |
 
-> **Birinchi qadam:** C-1, C-2, C-3 ni **bugun** yakunlang. Aks holda boshqa hech qanday chora samarali emas.
+> **2026-10-22 holati:** C-5, C-6, C-7 kodda tuzatildi va test qilindi. C-1, C-2, C-3, C-4 — faqat owner/GitHub/BotFather/cPanel orqali bajariladi; kod ularni o‘zi bekor qila olmaydi.
 
 ---
 
@@ -187,8 +193,8 @@ OK
 | 11 | CORS | Admin va bot endpoint’larida ACAO **yo‘q** | `api.php` |
 | 12 | Clickjacking | `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'` | `api.php` + `.htaccess` |
 | 13 | MIME sniffing | `X-Content-Type-Options: nosniff` | `api.php` |
-| 14 | HTTPS downgrade | HSTS **faqat Apache `.htaccess`** da; `api.php` da **noto‘g‘ri** (HTTP’da ham yuboriladi) ⚠️ | `api.php` + `.htaccess` |
-| 15 | Secret leakage | `config.local.php` **`out/` ga nusxalanadi** ⚠️ | `scripts/copy-static.mjs` |
+| 14 | HTTPS downgrade | HSTS **faqat HTTPS’da** (`api.php`) va Apache `.htaccess` da; HTTP’da yuborilmaydi | `api.php` + `.htaccess` |
+| 15 | Secret leakage | `config.local.php` build’ga **kirmaydi**; `600`, gitignored; CI tekshiradi | `scripts/copy-static.mjs`, CI |
 | 16 | Email header injection | `api_clean_header()` — `\r\n\0` olib tashlaydi | `api.php`, `backend/mailer.php` |
 | 17 | Open redirect | Faqat `http(s)` yoki `/` bilan boshlanuvchi xavfsiz relative | `api.php:handleFormSubmission()` |
 | 18 | Error leakage | `display_errors=0`, API javobida stack trace yo‘q | `api.php` |
@@ -240,15 +246,16 @@ otaboyev-sardorbek.uz/
 │   ├── schema.sql                 644
 │   ├── seed.sql                   644
 │   ├── migrate-project-sections.sql  644
-│   └── migrate-contact-messages.sql  644
+│   ├── migrate-contact-messages.sql  644
+│   └── migrate-bot-guards.sql      644  # idempotent
 │
 ├── github_keys.txt                600  🚨 Revoke qiling, keyin o‘chiring
-├── config.local.php               600  (backend/ dan nusxa yoki symlink)
+├── config.local.php               600  (web rootga qo‘lda; build’ga kirmaydi)
 │
 ├── out/                           755  → web rootga ko‘chiriladi
 │   ├── api.php
-│   ├── backend/                   ⚠️ config.local.php ham bu yerda
-│   └── config.local.php           🚨 build bilan deploy bo‘ladi
+│   ├── backend/                   ⚠️ config.local.php **bu yerda emas**
+│   └── (config.local.php yo‘q — CI tekshiradi)
 │
 ├── app/(site)/[locale]/...        Next.js sahifalari
 ├── components/                    React
@@ -273,62 +280,40 @@ otaboyev-sardorbek.uz/
 
 ---
 
-## 4. `api.php` — CORS va header tahlili (aniq muammolar)
+## 4. `api.php` — CORS va header tahlili
 
-### 4.1. CORS `*` — xavf nuqtalari
+### 4.1. CORS — 2026-10-22 holati
 
-```php
-// api.php (joriy holat)
-if (strpos($requestPath, '/admin') !== 0
-    && $requestPath !== '/websites'
-    && $requestPath !== '/bot/webhook') {
-    header('Access-Control-Allow-Origin: *');
-    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Api-Token, Authorization');
-}
-```
+**Eski holat (audit paytida):** `/admin`, `/websites`, `/bot/webhook`dan tashqari barcha yo‘llarga `Access-Control-Allow-Origin: *` berilardi; `/form_container/submit` ham CORS `*` olardi.
 
-**Natija:** quyidagi endpoint’larga istalgan domen **brauzerdan** so‘rov yuborishi mumkin:
-- `GET /api.php/profile` — ommaviy, muammo emas
-- `GET /api.php/projects` — ommaviy, muammo emas
-- `GET /api.php/projects/{slug}` — ommaviy, muammo emas
-- `GET /api.php/health` — ommaviy, muammo emas
-- **`POST /api.php/form_container/submit`** — 🚨 **form spam vector** (CSRF yo‘q, Origin yo‘q)
-
-### 4.2. Tuzatish (tavsiya)
+**Joriy holat (tuzatilgan):** wildcard CORS faqat public read-only JSON endpoint’larda beriladi:
 
 ```php
-$publicOnly = in_array($requestPath, ['/profile', '/projects'], true)
-    || preg_match('#^/projects/[a-z0-9-]+/?$#', $requestPath)
-    || $requestPath === '/health'
-    || $requestPath === '/status';
+$publicOnly = in_array($requestPath, ['/profile', '/projects', '/health', '/status'], true)
+    || preg_match('#^/projects/[a-z0-9-]+/?$#', $requestPath);
 
 if ($publicOnly) {
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Methods: GET, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type');
-}
-// /form_container/submit uchun CORS header YO‘Q
-```
-
-### 4.3. `Strict-Transport-Security` — HTTP’da yuborilmaydi
-
-```php
-// api.php (joriy holat — noto‘g‘ri)
-header('Strict-Transport-Security: max-age=31536000');
-```
-
-**Tuzatish:**
-```php
-$isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-        || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
-        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
-if ($isHttps) {
-    header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+    header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Api-Token, Authorization');
 }
 ```
 
-### 4.4. `Content-Security-Policy` — API uchun tor
+`/form_container/submit`, `/admin/*`, `/bot/webhook`, `/websites` CORS header qaytarmaydi. `.htaccess` qo‘shimcha himoya qatlami sifatida shu yo‘llardan CORS headerlarini o‘chiradi.
+
+### 4.2. HSTS — 2026-10-22 holati
+
+**Joriy kod:** HSTS faqat HTTPS aniqlanganda yuboriladi; shared hosting uchun `includeSubDomains`/`preload` qo‘shilmagan:
+
+```php
+if (api_is_https()) {
+    header('Strict-Transport-Security: max-age=31536000');
+}
+```
+
+HTTP’da HSTS header yo‘qligi test qilindi. `.htaccess` static javoblarga HSTS qo‘shadi; `includeSubDomains` ataylab yo‘q.
+
+### 4.3. `Content-Security-Policy` — API uchun tor
 
 ```php
 header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
@@ -408,7 +393,9 @@ WHERE form_id = :form_id AND ip_hash = :ip_hash
   AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE) -- limit 5
 ```
 
-### 5.7. **YANGI kerak bo‘lgan jadvallar (tavsiya)**
+### 5.7. Bot guard jadvallari (2026-10-22 da qo‘shildi)
+
+`database/schema.sql` va `database/migrate-bot-guards.sql` da mavjud:
 
 ```sql
 -- bot_updates_seen: Telegram retry idempotency
@@ -438,7 +425,9 @@ DELETE FROM bot_rate_limit   WHERE created_at < DATE_SUB(NOW(), INTERVAL 1 DAY);
 
 ---
 
-## 6. Yangi funksiyalar va metodlar (kod misollari bilan)
+## 6. Amalga oshirilgan himoya (2026-10-22)
+
+> Quyidagi kod misollari audit tavsiyasi sifatida yozilgan va 2026-10-22 da `backend/bot.php`, `api.php`, `scripts/copy-static.mjs` va `backend/admin.php` ga kiritildi. Aniq joriy implementatsiya uchun shu fayllarga qarang.
 
 ### 6.1. `backend/bot.php` — rate limit
 
@@ -506,7 +495,7 @@ function bot_clean_body($value, $max)
 }
 ```
 
-> Joriy kodda `/[^\P{C}\n\t]+/u` — ishlashi mumkin, ammo `mb_strcut` bilan kesish UTF-8 ni buzishi mumkin. Yuqoridagi versiya **aniq**.
+> 2026-10-22: aynan shu versiya `backend/bot.php` ga kiritildi va UTF-8 kesish test qilindi.
 
 ### 6.4. `api.php` — form uchun origin tekshiruv
 
@@ -521,16 +510,18 @@ if ($requestPath === '/form_container/submit') {
 }
 ```
 
+> Bu **ixtiyoriy qo‘shimcha**; hozirgi kodda form `website` honeypot, email/uzunlik validatsiyasi, 10 daqiqada 5 ta va IP bo‘yicha 10 ta limit bilan himoyalangan. Origin tekshiruvi faqat admin mutation’larida majburiy.
+
 ### 6.5. `scripts/copy-static.mjs` — `config.local.php` ni olib tashlash
 
 ```js
-// scripts/copy-static.mjs (joriy — xavfli)
+// scripts/copy-static.mjs (audit paytida — xavfli)
 const copies = [
   // ...
   ['config.local.php', 'config.local.php'], // ❌ out/ ga nusxalanadi
 ];
 
-// scripts/copy-static.mjs (tuzatilgan)
+// scripts/copy-static.mjs (2026-10-22 — tuzatilgan)
 const copies = [
   ['files', 'files'],
   ['js', 'js'],
@@ -598,28 +589,29 @@ function admin_check_origin()
 
 ## 7. Test rejasi (haqiqiy endpoint’lar asosida)
 
-### 7.1. Auth testlari
-- [ ] `GET /api.php/admin/config` → `{enabled: true|false}`
-- [ ] `GET /api.php/admin/auth/telegram` noto‘g‘ri `hash` → `/?error=telegram`
-- [ ] `auth_date` 5 daqiqadan eski → `/?error=expired`
-- [ ] `admin_users.is_active=0` → `/?error=unauthorized`
-- [ ] 15 daqiqada 4-chi challenge → `/?error=rate`
-- [ ] `POST /api.php/admin/auth/verify` noto‘g‘ri kod → `401 invalid_code` (5-chi urinishdan keyin `429 too_many_attempts`)
-- [ ] OTP `expires_at` o‘tgan → `401 challenge_expired`
-- [ ] Bir OTP ikki marta → ikkinchisi `401`
-- [ ] `POST /api.php/admin/profile` CSRF header **siz** → `403 csrf_failed`
-- [ ] `Origin: https://evil.com` bilan POST → `403 origin_rejected`
-- [ ] `Origin: null` bilan POST → `403 origin_rejected` (**yangi**)
+### 7.1. Auth testlari (2026-10-22 lokal, test DB)
+- [x] `GET /api.php/admin/config` → `{enabled: true|false}`
+- [x] `GET /api.php/admin/auth/telegram` noto‘g‘ri `hash` → `/?error=telegram`
+- [x] `auth_date` 5 daqiqadan eski → `/?error=expired`
+- [ ] `admin_users.is_active=0` → `/?error=unauthorized` (owner)
+- [ ] 15 daqiqada 4-chi challenge → `/?error=rate` (owner)
+- [x] `POST /api.php/admin/auth/verify` noto‘g‘ri kod → `401 invalid_code`; 6-chi urinishda `429 too_many_attempts`
+- [ ] OTP `expires_at` o‘tgan → `401 challenge_expired` (owner)
+- [ ] Bir OTP ikki marta → ikkinchisi `401` (owner)
+- [x] `POST /api.php/admin/profile` CSRF header **siz** → `403 csrf_failed`
+- [x] `Origin: https://evil.com` bilan POST → `403 origin_rejected`
+- [x] `Origin: null` bilan POST → `403 origin_rejected`
+- [x] Header’siz CLI POST → `403`; `X-Requested-With: XMLHttpRequest` bilan → o‘tadi
 
-### 7.2. Bot testlari
-- [ ] `GET /api.php/bot/webhook` → `405`
-- [ ] `POST` secret **siz** → `403`
-- [ ] `POST` secret noto‘g‘ri → `403`
-- [ ] `POST` `secret_token` to‘g‘ri, lekin `from.id != admin_id` → `200 ok` lekin javob yo‘q
-- [ ] Bir `update_id` ikki marta → ikkinchisi `200 ok` lekin amal bajarilmaydi (**yangi**)
-- [ ] `/send` 11 marta 1 daqiqada → 11-chisi rate limited (**yangi**)
-- [ ] Body 128 KB dan katta → `413` (**mavjud**)
-- [ ] `/inbox` bo‘sh quti → `Inbox bo‘sh.` matni
+### 7.2. Bot testlari (2026-10-22 lokal, test DB)
+- [x] `GET /api.php/bot/webhook` → `405`
+- [x] `POST` secret **siz** → `403`
+- [x] `POST` secret noto‘g‘ri → `403`
+- [x] `POST` `secret_token` to‘g‘ri, lekin `from.id != admin_id` → `200 ok` lekin javob yo‘q
+- [x] Bir `update_id` ikki marta → ikkinchisi `200 ok` lekin amal bajarilmaydi (`bot_updates_seen`da bitta qator)
+- [x] `bot_rate_limit_ok('selftest', 2)` → `true, true, false`
+- [ ] Body 128 KB dan katta → `413` (owner)
+- [ ] `/inbox` bo‘sh quti → `Inbox bo‘sh.` matni (owner/IMAP)
 
 ### 7.3. IMAP testlari
 - [ ] Bo‘sh quti → `[]` (xato yo‘q)
@@ -628,22 +620,23 @@ function admin_check_origin()
 - [ ] `imap_open` fail → `error_log('bot imap connection failed')` + user-friendly javob
 - [ ] Har chaqiruvdan keyin `imap_close` (leak yo‘q)
 
-### 7.4. CORS testlari
-- [ ] `GET /api.php/profile` `Origin: https://evil.com` bilan → `Access-Control-Allow-Origin: *` (✅ public)
-- [ ] `POST /api.php/form_container/submit` `Origin: https://evil.com` bilan → **CORS header yo‘q** (**yangi**)
-- [ ] `POST /api.php/admin/logout` `Origin: https://evil.com` bilan → `403`
-- [ ] `POST /api.php/bot/webhook` `Origin` bilan → ACAO yo‘q
+### 7.4. CORS testlari (2026-10-22 lokal)
+- [x] `GET /api.php/profile` `Origin: https://evil.com` bilan → `Access-Control-Allow-Origin: *` (public)
+- [x] `POST /api.php/form_container/submit` `Origin: https://evil.com` bilan → **CORS header yo‘q**
+- [x] `POST /api.php/admin/logout` `Origin: https://evil.com` bilan → `403 origin_rejected`
+- [x] `POST /api.php/bot/webhook` `Origin` bilan → ACAO yo‘q
+- [x] `OPTIONS /api.php/form_container/submit` → ACAO yo‘q
 
 ### 7.5. Konfiguratsiya testlari
-- [ ] `display_errors=Off`, `log_errors=On`, `error_reporting=E_ALL`
-- [ ] `backend/config.local.php` `chmod 600`
-- [ ] `github_keys.txt` **mavjud emas** (yoki `chmod 600` + repo tashqarisida)
-- [ ] Brauzerda `/backend/config.local.php` → `403`
-- [ ] Brauzerda `/database/schema.sql` → `403`
-- [ ] Brauzerda `/config.local.php` → `403` (Apache `.htaccess` bilan)
-- [ ] `https://otaboyev-sardorbek.uz` `Strict-Transport-Security` sarlavhasi bor (faqat HTTPS)
-- [ ] `http://otaboyev-sardorbek.uz` → `301 → https://...`
-- [ ] `out/config.local.php` **deploy’da yo‘q** (**yangi**)
+- [x] `display_errors=0`, `log_errors=1` `api.php` tomonidan majburiy qilinadi
+- [x] `config.local.php` `chmod 600`
+- [x] `github_keys.txt` `chmod 600`, gitignored, build/deploy’ga kirmaydi (owner revoke qilishi shart)
+- [x] `/backend/config.php` → `403` (router; Apache’da `.htaccess`)
+- [x] `/database/schema.sql` → `403`
+- [x] `/config.local.php` → `403`
+- [ ] `https://otaboyev-sardorbek.uz` `Strict-Transport-Security` sarlavhasi bor (production/HTTPS)
+- [ ] `http://otaboyev-sardorbek.uz` → `301 → https://...` (production/Apache)
+- [x] `out/config.local.php` **yo‘q** (build + CI testi)
 
 ---
 
@@ -740,23 +733,24 @@ function alert_admin(string $message): void {
 | V-01 | `stdClass` massiv sifatida | ✅ Fixed | 2026-10-22 | `(array)` cast, `isset()` |
 | V-02 | IMAP `imap_close` yo‘q | ✅ Fixed | 2026-10-22 | `try/finally` |
 | V-03 | IMAP SSL `/novalidate-cert` | ✅ Fixed | 2026-10-22 | `/imap/ssl` (cert tekshiriladi) |
-| V-04 | **`github_keys.txt` ochiq** | 🚨 **Open** | — | **Revoke darhol** |
-| V-05 | **`config.local.php` ochiq** | 🚨 **Open** | — | **Rotate barcha secrets** |
-| V-06 | **`out/config.local.php` build bilan ketadi** | 🚨 **Open** | — | `copy-static.mjs` tuzatish |
-| V-07 | **CORS `*` form endpoint** | 🚨 **Open** | — | `api.php` filtr |
-| V-08 | **HSTS HTTP’da** | ⚠️ Open | — | `$isHttps` tekshirish |
-| V-09 | `admin_check_origin` bo‘sh header’da ruxsat | ⚠️ Open | — | `X-Requested-With` talab |
-| V-10 | **Bot `/send` rate limit yo‘q** | ❌ **Missing** | — | `bot_rate_limit` jadval |
-| V-11 | **Bot update idempotency yo‘q** | ❌ **Missing** | — | `bot_updates_seen` jadval |
-| V-12 | `bot_clean_body` UTF-8 kesish | ⚠️ Open | — | `mb_strcut` |
-| V-13 | `SameSite=Strict` Telegram widget bilan | ⚠️ Sinov kerak | — | widget callback ishlashini tekshirish |
-| V-14 | DKIM yo‘q | ⚠️ Open | — | WHM/provider |
-| V-15 | DMARC `p=none` | ⚠️ Open | — | asta-sekin `p=quarantine` |
-| V-16 | PHP 7.1 EOL | ⚠️ **Kritik** | — | PHP 8.1+ ga ko‘chish rejasi |
-| V-17 | `display_errors=Off` productionda tasdiqlanmagan | ⚠️ Open | — | `php.ini` tekshirish |
-| V-18 | Log rotatsiyasi (`bot.log`) | ❌ Missing | — | `logrotate.conf` |
-| V-19 | Backup rejasi yo‘q | ❌ Missing | — | kunlik + S3 |
-| V-20 | Monitoring/alerting yo‘q | ❌ Missing | — | `alert_admin()` |
+| V-04 | **`github_keys.txt` ochiq** | ⚠️ **Owner** | 2026-10-22 | Fayl `600`, gitignored, build/deploy’ga kirmaydi; **PAT revoke** owner’da |
+| V-05 | **`config.local.php` ochiq** | ⚠️ **Owner** | 2026-10-22 | `600`, gitignored, build’ga kirmaydi; **secret rotate** owner’da |
+| V-06 | **`out/config.local.php` build bilan ketadi** | ✅ **Fixed** | 2026-10-22 | `copy-static.mjs` nusxalamaydi; CI tekshiradi |
+| V-07 | **CORS `*` form endpoint** | ✅ **Fixed** | 2026-10-22 | Faqat public read endpointlar |
+| V-08 | **HSTS HTTP’da** | ✅ **Fixed** | 2026-10-22 | `api_is_https()` sharti |
+| V-09 | `admin_check_origin` bo‘sh header’da ruxsat | ✅ **Fixed** | 2026-10-22 | `Origin: null` rad; `X-Requested-With` fallback |
+| V-10 | **Bot `/send` rate limit yo‘q** | ✅ **Fixed** | 2026-10-22 | `bot_rate_limit` + limitlar |
+| V-11 | **Bot update idempotency yo‘q** | ✅ **Fixed** | 2026-10-22 | `bot_updates_seen` |
+| V-12 | `bot_clean_body` UTF-8 kesish | ✅ **Fixed** | 2026-10-22 | `mb_strcut` + UTF-8 test |
+| V-13 | `SameSite=Strict` Telegram widget bilan | ⚠️ **Owner test** | — | Challenge Lax, session Strict; real widget testi owner’da |
+| V-14 | DKIM yo‘q | ⚠️ **Owner/provider** | — | WHM/Eskiz DNS |
+| V-15 | DMARC `p=none` | ⚠️ **Owner/provider** | — | asta-sekin `p=quarantine` |
+| V-16 | PHP 7.1 EOL | ⚠️ **Deploy** | — | Kod 7.1-compatible; production PHP 8.1+ tavsiya |
+| V-17 | `display_errors` productionda | ✅ **Fixed** | 2026-10-22 | `api.php` doim `0` + `log_errors` |
+| V-18 | Log rotatsiyasi | ⚠️ **Owner/ops** | — | cPanel/logrotate |
+| V-19 | Backup rejasi yo‘q | ⚠️ **Owner/ops** | — | kunlik + tashqi nusxa |
+| V-20 | Monitoring/alerting yo‘q | ⚠️ **Owner/ops** | — | `alert_admin()` yoki tashqi monitor |
+| V-21 | Legacy Google Maps API kalitlari | ✅ **Mitigated** | 2026-10-22 | `en/*` va `webcard` da `REDACTED_...`; Google Cloud’da rotate/restrict owner’da |
 
 ---
 
@@ -768,25 +762,25 @@ function alert_admin(string $message): void {
 - [x] `backend/`, `database/` HTTP’dan 403
 - [x] `APP_ENV=production`
 - [ ] `API_TOKEN` o‘rnatilgan yoki endpoint ataylab `401`
-- [x] `github_keys.txt` web root’da **emas** (lekin repo’da bor — **C-1**)
+- [x] `github_keys.txt` web root’da **emas**, mode `600`, gitignored (repo tarixida bor — owner revoke qiladi)
 - [ ] BotFather domeni `otaboyev-sardorbek.uz` (real Login Widget testi)
 - [x] `admin@` + `no-reply@` mailbox, `contact@` forwarder; SPF `pass`
 - [ ] DKIM DNS + Exim imzolash; DMARC `p=none`
 - [x] MySQL `admin_users` faqat kerakli admin; DB user least-privilege
 - [x] HTTPS majburiy; HSTS, CSP, `X-Frame-Options: DENY`
-- [ ] `out/config.local.php` deploy’da **yo‘q** (C-6)
+- [x] `out/config.local.php` deploy’da **yo‘q**; CI tekshiradi
 - [x] Telegram webhook secret + numeric admin ID allowlist
 - [x] Bot IMAP `panel2.eskiz.uz:993/imap/ssl`; `/send` cPanel `mail()`
 - [ ] Haqiqiy Telegram admin xabari bilan inbound webhook testi
 - [x] SSH key passphrase rotated 2026-10-22; mode 600, repo tashqarisida
-- [ ] **`display_errors=Off`, `log_errors=On`, `error_reporting=E_ALL`** (Q-2)
-- [ ] **`memory_limit=256M`, `max_execution_time=120`** (Q-3)
-- [ ] **Logrotate sozlangan: `bot.log` 10 MB** (Q-4)
-- [ ] **Bot rate limit va idempotency** (V-10, V-11)
-- [ ] **`out/` da `config.local.php` yo‘q** (C-6)
-- [ ] **CORS form endpoint’dan olib tashlangan** (C-6)
-- [ ] **GitHub PAT revoke qilingan** (C-1)
-- [ ] **`APP_SECRET` va bot token rotate qilingan** (C-2, C-3)
+- [x] `api.php` `display_errors=0`, `log_errors` yoqilgan
+- [ ] `memory_limit=256M`, `max_execution_time=120` (cPanel)
+- [ ] Logrotate sozlangan: `bot.log` 10 MB (cPanel)
+- [x] Bot rate limit va idempotency (`bot_rate_limit`, `bot_updates_seen`)
+- [x] CORS faqat public read endpointlarda
+- [ ] GitHub PAT revoke qilingan (owner)
+- [ ] `APP_SECRET` va bot token rotate qilingan (owner)
+- [ ] Google Maps API kalitlari Google Cloud’da rotate/restrict qilingan (owner)
 
 ---
 
@@ -797,24 +791,30 @@ function alert_admin(string $message): void {
 | 1.0 | 2026-10-20 | Boshlang‘ich `SECURITY.md` |
 | 2.0 | 2026-10-22 | 8 ta yangi nazorat qo‘shildi |
 | **3.0** | **2026-10-22** | **Haqiqiy `project_structure.json` asosida qayta yozildi**; 7 ta **kritik** (C-1...C-7) va 20 ta boshqa zaiflik aniqlandi; CORS, HSTS, `config.local.php` build, bot rate limit, idempotency, alerting, backup va test rejasi qo‘shildi; zaifliklar reyestri 15 tadan 20 taga chiqarildi |
+| **3.1** | **2026-10-22** | **Kod tuzatishlari va lokal testlar:** C-5/C-6/C-7, V-06...V-12, V-17 fixed; bot guard jadvallari va migratsiya; admin origin strict; `display_errors=0`; legacy Google Maps kalitlari redaksiya qilindi (V-21); test natijalari va owner amallari yangilandi |
 
 ---
 
-## 14. Ilova A — Tezkor P0 tuzatish ro‘yxati (bugun)
+## 14. Ilova A — P0 holati (2026-10-22)
 
-1. **`github_keys.txt` → Revoke** → o‘chirish
-2. **`APP_SECRET`** yangilash → `config.local.php` → `chmod 600`
+**Kodda bajarildi va test qilindi:**
+1. ✅ `scripts/copy-static.mjs` — `config.local.php` build’ga kirmaydi; CI tekshiradi
+2. ✅ Deploy — `config.local.php` web rootga qo‘lda `600` bilan qo‘yiladi
+3. ✅ `api.php` CORS — faqat public read-only endpointlar
+4. ✅ `api.php` HSTS — faqat HTTPS’da
+5. ✅ `api.php` — `display_errors=0`, `log_errors` yoqilgan
+6. ✅ `admin_check_origin()` — `Origin: null` rad, strict host/scheme/port, `X-Requested-With` fallback
+7. ✅ Bot — `bot_updates_seen` idempotency va `bot_rate_limit`
+8. ✅ Legacy Google Maps kalitlari — `REDACTED_GOOGLE_MAPS_KEY`
+
+**Faqat owner/provider bajaradi:**
+1. **`github_keys.txt` GitHub PAT’ni revoke qilish** va yangi tokenni repo tashqarisida saqlash
+2. **`APP_SECRET`** ni yangilash → `config.local.php` → `chmod 600` → session/challenge tozalash
 3. **`telegram_bot_token`** revoke → BotFather yangi token → `setWebhook` yangi `secret_token`
-4. **`admin@otaboyev-sardorbek.uz`** ga o‘tish, Gmail’ni zaxiraga
-5. **`scripts/copy-static.mjs`** dan `['config.local.php', 'config.local.php']` ni olib tashlash
-6. **Deploy skriptida** `config.local.php` ni web rootga **qo‘lda** qo‘yish (build bilan emas)
-7. **`api.php` CORS** filtrini form endpoint’dan olib tashlash
-8. **`api.php` HSTS** ni `$isHttps` shartiga o‘rash
-9. **`out/config.local.php`** ni serverda **`rm -f`** bilan o‘chirish
-10. **`admin_check_origin()`** da `Origin: null` va bo‘sh header’da `X-Requested-With` talab qilish
+4. **`admin@otaboyev-sardorbek.uz`** ga o‘tish, Gmail’ni zaxiraga olish
+5. **Google Maps API kalitlarini** Google Cloud’da rotate/restrict qilish
+6. **DKIM/DMARC** — WHM/Eskiz DNS
+7. **Haqiqiy Telegram Login Widget** va bot `/help` testi
+8. **Logrotate, backup va monitoring** — cPanel/ops
 
-> **Agar siz C-1...C-3 ni bajarmasangiz, boshqa barcha tuzatishlar samarasiz** — chunki tokenlar hozir ochiq holatda.
-
----
-
-Bu — sizning haqiqiy kodingizga asoslangan **yakuniy `SECURITY.md` v3.0** nusxasi. Uni to‘liq `SECURITY.md` ga saqlashingiz mumkin. Agar biror bo‘limni (masalan, `bot.php` uchun to‘liq refactor, yoki `api.php` CORS tuzatish) **tayyor kod bilan** yozib berishimni xohlasangiz — ayting.
+> **Muhim:** C-1...C-3 (PAT, `APP_SECRET`, bot token) owner tomonidan rotate qilinmaguncha to‘liq yopilgan hisoblanmaydi. Kod ularni o‘zi bekor qila olmaydi.

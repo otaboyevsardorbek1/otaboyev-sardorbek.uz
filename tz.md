@@ -16,7 +16,9 @@
 - Email: cPanel `admin@` (OTP/inbox), `no-reply@` (send) and `contact@` → `admin@` forwarder work. SPF passes; external DKIM is absent, Exim does not sign, and DMARC is still `p=none`; provider/WHM action is required.
 - SEO: `sitemap.xml` starts with 15 real URLs and is regenerated after every admin project create/update/delete (or from the admin button); canonical/hreflang exists on 3 homes, 3 listings and 9 detail pages.
 - Routing/security: unknown URLs return a real HTTP 404 with `out/404.html`; CSP/HSTS/frame/referrer/COOP/CORP headers are live; `/config.local.php`, `/backend/*` and `/database/*` return 403.
-- Last verified: `npm run check`, build, live API 200/401/404, admin OTP/CSRF/inbox/delete, contact insert/honeypot/rate logic, bot webhook security and fake `/help`/`/inbox`/`/read`/`/send`, Apache 404, and headless browser CSP/hydration checks on uz/en/ru/listing/detail/admin/dashboard.
+- Hardening (2026-10-22): wildcard CORS only on public read-only JSON (`profile`, `projects`, `health`, `status`); HSTS only over HTTPS; `config.local.php` is no longer copied into `out/`; `display_errors=0` + `log_errors`; admin `Origin`/`Referer` is compared strictly (host/scheme/port), `Origin: null` is rejected, and header-less CLI mutations require `X-Requested-With: XMLHttpRequest`; bot `update_id` idempotency and command rate limits are implemented.
+- Bot guards: `bot_updates_seen` and `bot_rate_limit` are in `database/schema.sql` and the idempotent `database/migrate-bot-guards.sql`; if the tables are absent the bot still works but the guards are disabled.
+- Last verified (local, 2026-10-22): `npm run check`, static build, secret-free `out/`, profile/projects/detail uz/en/ru, invalid lang, 404 slug, DB 503, contact honeypot/invalid/5-per-10-minute/10-global limits, admin challenge → OTP → session, origin/CSRF rejection, OTP lockout, inbox CRUD, self-delete/deactivate guards, sitemap update, bot secret rejection and duplicate `update_id`, migration idempotency.
 
 ### Audit conclusions
 
@@ -26,7 +28,8 @@ The implemented architecture is coherent: static Next pages, a PHP-only runtime 
 - BotFather `/setdomain` and a real Telegram Login/update need a manual check with the owner’s account;
 - the static detail fallback is still not crawler-fresh after admin edits;
 - contact messages persist in MySQL and appear in the admin inbox; contact email notification is not wired (the inbox is the source of truth);
-- SSH key passphrase was rotated on 2026-10-22; the new value is stored outside the repo (mode 600).
+- SSH key passphrase was rotated on 2026-10-22; the new value is stored outside the repo (mode 600);
+- owner-only rotations remain: GitHub PAT in `github_keys.txt`, `APP_SECRET`, Telegram bot token, the Gmail admin OTP address, and the legacy Google Maps API keys that were redacted from the working tree but remain in git history.
 
 The backlog below turns those findings into ordered work.
 
@@ -36,7 +39,7 @@ The live deployment is built from `/home/host9590/apps/otaboyev-sardorbek.uz` an
 
 ## Active work
 
-Production DB/mailbox/bot/admin configuration is complete and smoke-tested. Remaining work: commit the current documentation/deploy notes, rebuild `out/` on Node 22, perform a full tar deploy while preserving `config.local.php` and `.well-known/`, then re-run live API/admin/contact/bot checks. DNS DKIM/DMARC and a real Telegram Login test are blocked on provider/owner action.
+Production DB/mailbox/bot/admin configuration is complete and smoke-tested. Remaining work: commit the current security-hardening and documentation changes, import `database/migrate-bot-guards.sql` into production, rebuild `out/` on Node 22, perform a full tar deploy while preserving `config.local.php` and `.well-known/`, then re-run live API/admin/contact/bot checks. The owner still has to revoke/rotate the leaked secrets, move OTP to `admin@`, rotate the legacy Google Maps keys, and complete DKIM/DMARC plus a real Telegram Login test.
 
 ## Baseline completed
 
@@ -52,7 +55,8 @@ Production DB/mailbox/bot/admin configuration is complete and smoke-tested. Rema
 - Real 404: `.htaccess` uses `ErrorDocument 404 /404.html`; the SPA catch-all was removed.
 - GitHub Actions workflow runs `npm ci`, PHP/JS lint, static build and export-file checks on push/PR.
 - Project detail migration: React routes, `ProjectDetail.jsx`, API refresh, `results`/`stack_notes`, admin fields, seed/migration SQL and Apache fallback for new slugs.
-- Admin panel: Telegram HMAC + email OTP, hashed one-time codes, HttpOnly/Secure/SameSite cookies, CSRF, rate limits, audit log and 3-language profile/project CRUD.
+- Admin panel: Telegram HMAC + email OTP, hashed one-time codes, HttpOnly/Secure/SameSite cookies, CSRF, strict origin check, rate limits, audit log and 3-language profile/project CRUD.
+- Security hardening: API CORS limited to public read-only JSON, HSTS only on HTTPS, `display_errors=0` + `log_errors`, no `config.local.php` in the build artifact, bot idempotency/rate-limit tables, and legacy Google Maps keys redacted from tracked files.
 - Apache checks: admin PATH_INFO is not caught by the fallback, `backend/`/`database/`/`config.local.php` are denied, and known + admin-created detail URLs return 200.
 
 ## Backlog
@@ -62,6 +66,8 @@ Production DB/mailbox/bot/admin configuration is complete and smoke-tested. Rema
 | P1 | DKIM is absent and DMARC is `p=none`; Exim does not sign | external DNS (`ns1/ns2.eskiz.uz`), cPanel/WHM; Port25 report | Publish a fresh `default._domainkey` TXT and set DMARC to `p=quarantine` once provider/WHM access exists; enable Exim DKIM signing; rerun Port25 |
 | P1 | BotFather domain and a real Telegram admin update are not verified | BotFather; `@otaboyev_sardorbek_uz_bot`; `/admin/` widget | Run `/setdomain otaboyev-sardorbek.uz`, log in with the real Telegram account, and send one real `/help`/`/inbox` message to the bot |
 | P1 | Full deploy after the latest fixes is pending | `/home/host9590/apps/.../out`, `/home/host9590/public_html` | Build with Node 22 and tar-deploy `out/` excluding `config.local.php`; preserve `.well-known/`; rerun live checks |
+| P1 | Owner-only secret rotations are still pending | GitHub PAT (`github_keys.txt`), `config.local.php` (`APP_SECRET`, bot token, Gmail OTP), legacy Google Maps keys | Revoke the GitHub PAT; regenerate `APP_SECRET` and bot token; move OTP to `admin@`; rotate/restrict the Google Maps keys in Google Cloud |
+| P1 | New bot guard tables must be imported in production | `database/migrate-bot-guards.sql` | Run the idempotent migration once against `host9590_portfolio`; verify `bot_updates_seen` and `bot_rate_limit` exist |
 | P3 | SSH key passphrase was exposed during setup | local `~/.ssh/id_rsa` | Completed 2026-10-22: passphrase rotated; new value stored outside the repo with mode 600 |
 | P2 | `en/*` legacy Sitejet pages have no uz/ru counterparts | `en/portfolio`, `en/tech-stack`, … | Owner decision: keep and translate, or remove from the repo/sitemap |
 | P3 | Detail fallback is build-time HTML; crawlers may see stale copy after admin edits | `components/ProjectDetail.jsx`, `[slug]/page.js` | Accept for now or add a production rebuild/publish hook |
@@ -107,16 +113,17 @@ When architecture, routes, schema, deploy steps or security behavior change, upd
 ## Verification checklist
 
 1. `npm run check`
-2. `npm run build`; confirm `out/` has 3 homes, 3 listings, 9 known details, 3 generic `view` routes and the 3 admin pages.
-3. Preview with DB env: `DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out`.
+2. `npm run build`; confirm `out/` has 3 homes, 3 listings, 9 known details, 3 generic `view` routes, the 3 admin pages, `.htaccess`, `api.php`, `404.html`; confirm `out/config.local.php`, `out/config.local.js` and `out/github_keys.txt` are absent.
+3. Preview with DB env: `DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... ./run_local.sh` (or the equivalent `php -S` command).
 4. `/uz/`, `/en/`, `/ru/` + one known detail + one generic detail; no unintended 404, CORS or hydration errors.
-5. API: profile/projects/detail for all locales, invalid `lang`, missing slug (404), DB unavailable (503).
-6. Contact form: network request to `/api.php/form_container/submit` succeeds; row appears in `contact_messages`; honeypot is rejected; the 6th request from the same IP within 10 minutes returns 429.
-7. Admin: `/admin/` config `enabled`; Telegram callback → challenge cookie → email code (`log` locally) → session; wrong OTP, expired challenge/session, missing CSRF and admin CORS checks; inbox count/list/read/delete; admin add/edit/delete with self/last-admin guards; sitemap button returns `{updated:true,urls:N}`.
-8. Bot: `POST /api.php/bot/webhook` without/wrong secret → 403; GET → 405; fake update from the configured numeric admin ID runs `/help`, `/inbox`, `/read` and `/send`; `/send` mail lands in `admin@`; `getWebhookInfo` shows `pending_update_count=0`.
-9. Apache: known detail URL, admin-created slug fallback, denied `backend/`/`database/`/`config.local.php`, `/de/` and `/nope` → real 404, `/api.php/health` → 200.
-10. Headless browser: `/uz/`, `/en/`, `/ru/`, `/uz/projects/`, a known detail, `/admin/` and authenticated `/admin/dashboard/` have no console/CSP/request-failure or hydration errors.
-11. `git diff --check`, `git diff --stat`, and review the complete diff before committing.
+5. API: profile/projects/detail for all locales, invalid `lang`, missing slug (404), DB unavailable (503); public reads return `Access-Control-Allow-Origin: *`, form/admin/bot/token responses do not; HTTP has no HSTS.
+6. Contact form: network request to `/api.php/form_container/submit` succeeds; row appears in `contact_messages`; honeypot → 400, invalid email → 422, the 6th request from the same IP within 10 minutes returns 429, and the 10-row global IP guard returns 429.
+7. Admin: `/admin/` config `enabled`; Telegram callback → challenge cookie → email code (`log` locally) → session; wrong OTP and 6th-attempt lockout, expired challenge/session, missing CSRF, `Origin: null`, evil origin and header-less mutation → 403; `X-Requested-With` fallback passes origin; inbox count/list/read/delete; admin add/edit/delete with self/last-admin guards; sitemap button returns `{updated:true,urls:N}`.
+8. Bot: `POST /api.php/bot/webhook` without/wrong secret → 403; GET → 405; fake update from the configured numeric admin ID runs `/help`, `/inbox`, `/read` and `/send`; `/send` mail lands in `admin@`; duplicate `update_id` is processed once; `bot_rate_limit_ok('send', 10)` returns false on the 11th call; `getWebhookInfo` shows `pending_update_count=0`.
+9. Import `database/migrate-bot-guards.sql` twice; the second run must succeed and both `bot_updates_seen` and `bot_rate_limit` must exist.
+10. Apache: known detail URL, admin-created slug fallback, denied `backend/`/`database/`/`config.local.php`, `/de/` and `/nope` → real 404, `/api.php/health` → 200.
+11. Headless browser: `/uz/`, `/en/`, `/ru/`, `/uz/projects/`, a known detail, `/admin/` and authenticated `/admin/dashboard/` have no console/CSP/request-failure or hydration errors.
+12. `git diff --check`, `git diff --stat`, and review the complete diff before committing.
 
 ## Acceptance criteria
 

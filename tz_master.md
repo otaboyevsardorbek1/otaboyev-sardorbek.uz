@@ -46,9 +46,9 @@ The repository has one Next.js frontend layer, one PHP content/admin backend and
 - `backend/contact.php` — contact validation, IP hash, rate limit, inbox persistence and native `id=contact` handler.
 - `backend/content.php` — public JSON content API.
 - `backend/admin.php` — Telegram + email OTP auth, sessions, CSRF, rate limits, audit log, profile/project CRUD, inbox, sitemap and admin-user management.
-- `backend/bot.php` — private Telegram email bridge: webhook secret + numeric admin allowlist, IMAP inbox/read and cPanel `mail()` send; only `/api.php/bot/webhook`.
+- `backend/bot.php` — private Telegram email bridge: webhook secret + numeric admin allowlist, IMAP inbox/read and cPanel `mail()` send; `update_id` idempotency and command rate limits; only `/api.php/bot/webhook`.
 - `backend/mailer.php` — `mail`, SMTP, Resend, Brevo and local `log` drivers.
-- `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`.
+- `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql`.
 
 ### Legacy / Sitejet files
 
@@ -87,9 +87,10 @@ Existing database (before the project-sections and contact-inbox migrations):
 ```bash
 mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
 mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
+mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
 ```
 
-`migrate-project-sections.sql` adds `results` and `stack_notes`; it is a one-time, non-idempotent script. `migrate-contact-messages.sql` uses `CREATE TABLE IF NOT EXISTS` and is safe to run again. Re-import `database/seed.sql` **only** when resetting to the default content — it overwrites existing admin edits.
+`migrate-project-sections.sql` adds `results` and `stack_notes`; it is a one-time, non-idempotent script. `migrate-contact-messages.sql` and `migrate-bot-guards.sql` use `CREATE TABLE IF NOT EXISTS` and are safe to run again. Re-import `database/seed.sql` **only** when resetting to the default content — it overwrites existing admin edits.
 
 ## 4. API contract
 
@@ -145,11 +146,11 @@ Errors: `404 project_not_found`, `503 db_unavailable`, `405 method_not_allowed`,
 - Telegram Login Widget callback: HMAC-SHA256 with the bot token, `auth_date` window, allowed `ADMIN_TELEGRAM_ID` or active `admin_users` row.
 - OTP: 6 digits, HMAC-hashed, one-time, 10 minutes, 5 attempts.
 - Cookies: `admin_session` HttpOnly, Secure on HTTPS, `SameSite=Strict`; `admin_challenge` HttpOnly, `SameSite=Lax`.
-- CSRF: HMAC token bound to the session; required on POST/PUT/DELETE.
+- CSRF: HMAC token bound to the session; required on POST/PUT/DELETE. `Origin`/`Referer` must match `site_url` by scheme, host and port; `Origin: null` is rejected; if both headers are absent (CLI), `X-Requested-With: XMLHttpRequest` is required.
 - Rate limits: challenge and start attempts per time window; auth events recorded.
 - Audit: profile/project, inbox read/delete, sitemap and admin-user mutations written to `admin_audit_log`.
 - Auth is disabled unless all required settings are valid: HTTPS production URL, mail driver, Telegram bot token/username, numeric admin ID, valid admin email and a 64-hex app secret.
-- Bot bridge: secret token (`hash_equals`) plus numeric `admin.telegram_id`; GET/other updates rejected; no OTP, bot token or mailbox password is sent to Telegram.
+- Bot bridge: secret token (`hash_equals`) plus numeric `admin.telegram_id`; GET/other updates rejected; `update_id` idempotency (`bot_updates_seen`) and `/inbox`/`/read`/`/send` limits (`bot_rate_limit`); no OTP, bot token or mailbox password is sent to Telegram.
 - Never expose bot token, app secret, OTP, webhook secret, IMAP password or real admin email in public JSON or logs.
 - Production DB user has only `SELECT, INSERT, UPDATE, DELETE`; DDL is granted temporarily for migrations.
 
@@ -159,7 +160,7 @@ Errors: `404 project_not_found`, `503 db_unavailable`, `405 method_not_allowed`,
 - Runtime: PHP + MySQL only; no Passenger/Node runtime.
 - Primary server: Apache with `.htaccess` (`mod_rewrite`, `mod_headers`).
 - Nginx: `.htaccess` is ignored; equivalent `try_files`/rewrite is required for the generic detail fallback, plus `error_page 404 /404.html` for real 404s.
-- Build locally or on the server: `npm ci && npm run build`; copy `out/` to the web root.
+- Build locally or on the server: `npm ci && npm run build`; copy `out/` to the web root. The build never copies `config.local.php`; `run_local.sh`/`run_server.sh` copy it into `out/` with mode `600` for preview only, and production places it in the web root manually.
 - Current production: source `/home/host9590/apps/otaboyev-sardorbek.uz`, web root `/home/host9590/public_html`, Node 22 via `/opt/alt/alt-nodejs22/enable`; deploy with `tar` because `rsync` is absent, preserving `config.local.php` and `.well-known/`.
 - DB config: gitignored `config.local.php` or `DB_*` environment variables. Production DB `host9590_portfolio` is least-privilege.
 - Production requires HTTPS, a real DB, Telegram bot/ID, email credentials, bot webhook secret and `APP_SECRET`.
@@ -186,12 +187,15 @@ DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out
 Verify:
 
 - `/uz/`, `/en/`, `/ru/` load without console/network/hydration errors.
+- `out/` contains `.htaccess`, `api.php`, `404.html`, admin pages; `out/config.local.php`, `out/config.local.js` and `out/github_keys.txt` are absent.
 - One known detail per locale, its language switcher and API refresh; one admin-created slug through Apache.
-- Content API: profile/projects/detail for all locales, invalid `lang`, missing slug and `db_unavailable`.
-- Admin: config `enabled`; Telegram callback → challenge cookie → email code → session; wrong OTP, expired challenge/session, missing CSRF, CORS separation and logout.
+- Content API: profile/projects/detail for all locales, invalid `lang`, missing slug and `db_unavailable`; CORS `*` only on public reads; no HSTS over HTTP.
+- Admin: config `enabled`; Telegram callback → challenge cookie → email code → session; wrong OTP + lockout, expired challenge/session, missing CSRF, `Origin: null`/evil origin/header-less rejection, CORS separation and logout.
 - Admin profile/project create→update→delete; confirm public API and 3-language validation.
-- Contact form request/response in the network tab; `contact_messages` row; inbox count/list/read/delete; honeypot and 429 limit.
+- Contact form request/response in the network tab; `contact_messages` row; inbox count/list/read/delete; honeypot, invalid email, per-IP 5/10-minute and 10-row global limits.
 - Admin-user add/edit/delete with self/last-admin guards; sitemap button and automatic regeneration after project save/delete.
+- Bot: missing/wrong secret → 403, GET → 405, valid secret + unauthorized user → 200 without action, duplicate `update_id` processed once, rate limit returns false on the 11th call.
+- `database/migrate-bot-guards.sql` imported twice successfully; both bot tables exist.
 - Apache: real 404 for `/de/`/`/nope`, generic detail fallback, denied backend/config paths.
 - CV links resolve; `.htaccess` rewrites tested on Apache.
 - `git diff --check` and a full diff review.
@@ -237,6 +241,15 @@ Owner decisions are required for locale parity (`en/*`), media upload and legacy
 - API/static CSP/HSTS/frame/referrer/COOP/CORP headers; `X-Powered-By` removed; headless browser checks passed.
 - Full tar deploy completed; SSH key passphrase rotated after setup exposure (new value stored outside the repo, mode 600).
 - Outstanding: external DKIM/DMARC and Exim signing; real Telegram Login/widget.
+
+**Security hardening 2026-10-22 (post-deploy, needs redeploy):**
+
+- `config.local.php` removed from the build artifact; CI and local checks assert its absence.
+- CORS narrowed to public read-only JSON; HSTS sent only over HTTPS; `display_errors=0` + `log_errors`.
+- Admin origin check tightened (strict scheme/host/port, `Origin: null` rejected, `X-Requested-With` fallback).
+- Bot `update_id` idempotency and command rate limits; `database/migrate-bot-guards.sql` added and tested twice.
+- Legacy Google Maps API keys redacted from tracked `en/*` and `webcard` files; they remain in git history, so owner rotation is required.
+- Owner-only remain: GitHub PAT revoke, `APP_SECRET`/bot token rotation, OTP move to `admin@`, and Google Maps key rotation/restriction.
 
 **Remaining:**
 
