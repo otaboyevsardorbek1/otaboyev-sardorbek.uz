@@ -92,9 +92,15 @@ Header always set Strict-Transport-Security "max-age=31536000"
 # Mutation endpoints (form, token, bot, admin) must never carry CORS headers,
 # even if a future PHP change adds one by mistake.
 <If "%{REQUEST_URI} =~ m#^/api\.php/(admin|bot|form_container|websites)#">
+    # Header "unset" removes headers set by PHP; "always unset" covers error
+    # responses. Keep both so a future PHP CORS change cannot leak.
+    Header unset Access-Control-Allow-Origin
     Header always unset Access-Control-Allow-Origin
+    Header unset Access-Control-Allow-Methods
     Header always unset Access-Control-Allow-Methods
+    Header unset Access-Control-Allow-Headers
     Header always unset Access-Control-Allow-Headers
+    Header unset Access-Control-Allow-Credentials
     Header always unset Access-Control-Allow-Credentials
 </If>
 
