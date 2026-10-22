@@ -568,7 +568,7 @@ Bu loyiha Sardorbek Otaboyevga tegishli shaxsiy portfolio sayti bo‘lib, uning 
 Sardorbek Otaboyev
 
 ## Bog‘lanish
-
+- Phone: +998918610470
 - Email: contact@otaboyev-sardorbek.uz
 - GitHub: https://github.com/otaboyevsardorbek1
 - Telegram: https://t.me/otaboyevsardorbek
