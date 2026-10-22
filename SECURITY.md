@@ -130,7 +130,7 @@ Agar admin session yoki bot token oshkor bo‘lsa:
 
 ## ⚠️ 0. TEZKOR OGOHLANTIRISH — 2026-10-22 HOLATI
 
-Quyidagi zaifliklar `project_structure.json` dan **haqiqiy kod va maxfiy qiymatlar** orqali aniqlangan. Har biri **bir xil darajada kritik**:
+Quyidagi zaifliklar `project_structure.json` dan **haqiqiy kod va maxfiy qiymatlar** orqali aniqlangan. C-5...C-7 kodda tuzatilgan; C-1...C-4 owner/GitHub/BotFather/cPanel amalini kutmoqda:
 
 | # | Zaiflik | Fayl / joy | Darhol amal |
 |---|---------|-----------|-------------|
@@ -626,6 +626,7 @@ function admin_check_origin()
 - [x] `POST /api.php/admin/logout` `Origin: https://evil.com` bilan → `403 origin_rejected`
 - [x] `POST /api.php/bot/webhook` `Origin` bilan → ACAO yo‘q
 - [x] `OPTIONS /api.php/form_container/submit` → ACAO yo‘q
+- [x] Apache 2.4 + `.htaccess`: `Header unset` mutation endpointlardan PHP qo‘shgan ACAO’ni o‘chiradi; public `/profile`da ACAO `*` qoladi (lokal test)
 
 ### 7.5. Konfiguratsiya testlari
 - [x] `display_errors=0`, `log_errors=1` `api.php` tomonidan majburiy qilinadi
