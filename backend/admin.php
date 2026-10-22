@@ -208,9 +208,21 @@ function admin_check_origin()
 
     $origin = isset($_SERVER['HTTP_ORIGIN']) && is_string($_SERVER['HTTP_ORIGIN']) ? (string) $_SERVER['HTTP_ORIGIN'] : '';
     $referer = isset($_SERVER['HTTP_REFERER']) && is_string($_SERVER['HTTP_REFERER']) ? (string) $_SERVER['HTTP_REFERER'] : '';
+
+    // Sandboxed/opaque origins ("null") must never pass the comparison below.
+    if (strtolower(trim($origin)) === 'null') {
+        admin_fail('Cross-origin request rejected', 'origin_rejected', 403);
+    }
+
     $candidate = $origin !== '' ? $origin : $referer;
     if ($candidate === '') {
-        // The CSRF token is still mandatory for state-changing requests.
+        // Browsers always send Origin (or Referer) for state-changing
+        // requests. Header-less clients must opt in explicitly, so a forged
+        // request that strips both headers is still rejected.
+        $requestedWith = isset($_SERVER['HTTP_X_REQUESTED_WITH']) ? (string) $_SERVER['HTTP_X_REQUESTED_WITH'] : '';
+        if (strcasecmp($requestedWith, 'XMLHttpRequest') !== 0) {
+            admin_fail('Cross-origin request rejected', 'origin_rejected', 403);
+        }
         return;
     }
 

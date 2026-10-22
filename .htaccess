@@ -1,8 +1,15 @@
+# =====================================================================
+# otaboyev-sardorbek.uz – Birlashtirilgan .htaccess
+# Sana: 2026-10-22
+# =====================================================================
+
+# ---------- Asosiy sozlamalar ----------
 Options -Indexes
 DirectoryIndex index.html
 AcceptPathInfo On
 ErrorDocument 404 /404.html
 
+# ---------- Rewrite Engine ----------
 RewriteEngine On
 
 # Force HTTPS in production, but keep local development hosts on HTTP.
@@ -34,8 +41,7 @@ RewriteCond %{REQUEST_FILENAME}/index.html !-f
 RewriteCond %{REQUEST_URI} ^/(uz|en|ru)/projects/([a-z0-9-]+)/?$
 RewriteRule ^(uz|en|ru)/projects/([a-z0-9-]+)/?$ /$1/projects/view/?slug=$2 [L,QSA]
 
-# Static asset cache control. CSS/JS filenames are not content-hashed in the
-# legacy tree, so keep their cache short enough for a deploy to take effect.
+# ---------- Statik fayllar keshi ----------
 <FilesMatch "\.(css|js)$">
     Header set Cache-Control "public, max-age=300, must-revalidate"
 </FilesMatch>
@@ -43,19 +49,21 @@ RewriteRule ^(uz|en|ru)/projects/([a-z0-9-]+)/?$ /$1/projects/view/?slug=$2 [L,Q
     Header set Cache-Control "public, max-age=31536000, immutable"
 </FilesMatch>
 
-# Keep admin routes out of search indexes even if a crawler ignores meta tags.
+# ---------- Admin noindex ----------
 <If "%{REQUEST_URI} =~ m#^/(admin/|api\.php/admin)#">
     Header set X-Robots-Tag "noindex, nofollow"
 </If>
 
-# HTML files: short cache to refresh after deploys
+# ---------- HTML fayllar keshi ----------
 <FilesMatch "\.html$">
     Header set Cache-Control "no-cache, no-store, must-revalidate"
     Header set Pragma "no-cache"
     Header set Expires "0"
 </FilesMatch>
 
-# Security headers
+# =====================================================================
+# XAVFSIZLIK SARLAVHALARI
+# =====================================================================
 Header always unset X-Powered-By
 Header always unset Server
 Header always set X-Content-Type-Options "nosniff"
@@ -68,8 +76,31 @@ Header always set Cross-Origin-Opener-Policy "same-origin-allow-popups"
 Header always set Cross-Origin-Resource-Policy "same-origin"
 Header always set X-Permitted-Cross-Domain-Policies "none"
 Header always set X-Download-Options "noopen"
+
+# =====================================================================
+# HSTS
+# =====================================================================
+# Do not add includeSubDomains/preload on shared hosting: other subdomains
+# may still be HTTP-only and would become unreachable. Enable them only after
+# every subdomain is HTTPS-ready.
 Header always set Strict-Transport-Security "max-age=31536000"
 
+# =====================================================================
+# CORS SAFETY NET
+# =====================================================================
+# api.php only emits wildcard CORS for public read-only JSON endpoints.
+# Mutation endpoints (form, token, bot, admin) must never carry CORS headers,
+# even if a future PHP change adds one by mistake.
+<If "%{REQUEST_URI} =~ m#^/api\.php/(admin|bot|form_container|websites)#">
+    Header always unset Access-Control-Allow-Origin
+    Header always unset Access-Control-Allow-Methods
+    Header always unset Access-Control-Allow-Headers
+    Header always unset Access-Control-Allow-Credentials
+</If>
+
+# =====================================================================
+# FAYL VA PAPKA HIMOYASI
+# =====================================================================
 # Configuration, secrets and source folders must never be served directly.
 <FilesMatch "^(config\.local\.php|config\.local\.js|github_keys\.txt|\.env.*|\.git.*|composer\.(json|lock)|package(-lock)?\.json|next\.config\.js|CodeAnalyzer_v2\.py|.*\.(sql|log|bak|md))$">
     Require all denied

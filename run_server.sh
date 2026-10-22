@@ -55,6 +55,13 @@ if [ "${FORCE_BUILD:-0}" = "1" ] || [ ! -f "$ROOT/out/index.html" ] || [ ! -f "$
     npm run build
 fi
 
+# The build never ships secrets. Local previews still need the DB/admin config,
+# so copy it into out/ here (600) — production deploy places it manually.
+if [ -f "$ROOT/config.local.php" ]; then
+    cp -f "$ROOT/config.local.php" "$ROOT/out/config.local.php"
+    chmod 600 "$ROOT/out/config.local.php" 2>/dev/null || true
+fi
+
 if port_in_use; then
     echo "Port ${PORT} band. Boshqa port uchun PORT=... ./run_server.sh ishlating." >&2
     exit 1

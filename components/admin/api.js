@@ -22,6 +22,7 @@ export async function adminApi(path, options = {}) {
   if (csrfToken) {
     headers.set('X-CSRF-Token', csrfToken);
   }
+  headers.set('X-Requested-With', 'XMLHttpRequest');
 
   const response = await fetch(`/api.php/admin${path}`, {
     credentials: 'same-origin',

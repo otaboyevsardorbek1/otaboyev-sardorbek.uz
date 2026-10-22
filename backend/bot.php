@@ -42,7 +42,7 @@ function bot_clean_header($value, $max)
 {
     $value = trim(str_replace(array("\r", "\n", "\0"), '', (string) $value));
     if ($max > 0 && strlen($value) > $max) {
-        $value = substr($value, 0, $max);
+        $value = function_exists('mb_strcut') ? mb_strcut($value, 0, $max, 'UTF-8') : substr($value, 0, $max);
     }
     return $value;
 }
@@ -53,14 +53,89 @@ function bot_clean_body($value, $max)
     if (function_exists('mb_check_encoding') && !mb_check_encoding($value, 'UTF-8')) {
         $value = mb_convert_encoding($value, 'UTF-8', 'UTF-8');
     }
-    $cleaned = preg_replace('/[^\P{C}\n\t]+/u', '', $value);
-    if ($cleaned !== null) {
+    // Remove control characters but keep newlines and tabs. The previous
+    // pattern relied on \P{C} semantics and could return null.
+    $cleaned = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $value);
+    if (is_string($cleaned)) {
         $value = $cleaned;
     }
     if ($max > 0 && strlen($value) > $max) {
-        $value = substr($value, 0, $max) . "\n…";
+        $value = (function_exists('mb_strcut') ? mb_strcut($value, 0, $max, 'UTF-8') : substr($value, 0, $max)) . "\n…";
     }
     return trim($value);
+}
+
+function bot_db()
+{
+    try {
+        return content_db();
+    } catch (Exception $error) {
+        error_log('bot database unavailable: ' . $error->getMessage());
+        return null;
+    }
+}
+
+// Telegram retries webhook updates. Remember every update_id so a retried
+// /send cannot deliver the same email twice. Missing tables only disable the
+// guard; the bot keeps working.
+function bot_is_duplicate_update($updateId)
+{
+    $updateId = (int) $updateId;
+    if ($updateId < 1) {
+        return false;
+    }
+    $pdo = bot_db();
+    if (!$pdo) {
+        return false;
+    }
+
+    try {
+        $statement = $pdo->prepare('INSERT IGNORE INTO bot_updates_seen (update_id, seen_at) VALUES (:update_id, UTC_TIMESTAMP())');
+        $statement->execute(array(':update_id' => $updateId));
+        return $statement->rowCount() === 0;
+    } catch (Exception $error) {
+        error_log('bot idempotency guard unavailable: ' . $error->getMessage());
+        return false;
+    }
+}
+
+function bot_rate_limit_ok($command, $maxPerMinute)
+{
+    $config = bot_config();
+    $adminId = (int) $config['admin_id'];
+    if ($adminId < 1) {
+        return false;
+    }
+    $pdo = bot_db();
+    if (!$pdo) {
+        // Do not lock the owner out when the DB is temporarily unavailable.
+        return true;
+    }
+
+    try {
+        $statement = $pdo->prepare(
+            'SELECT COUNT(*) FROM bot_rate_limit
+             WHERE admin_id = :admin_id AND command = :command
+               AND created_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 MINUTE)'
+        );
+        $statement->execute(array(':admin_id' => $adminId, ':command' => (string) $command));
+        if ((int) $statement->fetchColumn() >= (int) $maxPerMinute) {
+            return false;
+        }
+
+        $insert = $pdo->prepare('INSERT INTO bot_rate_limit (admin_id, command, created_at) VALUES (:admin_id, :command, UTC_TIMESTAMP())');
+        $insert->execute(array(':admin_id' => $adminId, ':command' => (string) $command));
+
+        if (random_int(1, 50) === 1) {
+            $pdo->exec('DELETE FROM bot_rate_limit WHERE created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY)');
+            $pdo->exec('DELETE FROM bot_updates_seen WHERE seen_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY)');
+        }
+
+        return true;
+    } catch (Exception $error) {
+        error_log('bot rate limit unavailable: ' . $error->getMessage());
+        return true;
+    }
 }
 
 function bot_api($method, array $payload)
@@ -107,10 +182,10 @@ function bot_send_message($chatId, $text)
             $chunks[] = $text;
             break;
         }
-        $part = substr($text, 0, 3900);
+        $part = function_exists('mb_strcut') ? mb_strcut($text, 0, 3900, 'UTF-8') : substr($text, 0, 3900);
         $break = strrpos($part, "\n");
         if ($break === false || $break < 2000) {
-            $break = 3900;
+            $break = strlen($part);
         }
         $chunks[] = substr($text, 0, $break);
         $text = ltrim(substr($text, $break));
@@ -138,7 +213,8 @@ function bot_imap_open()
 
     $flags = $config['imap_ssl'] ? '/imap/ssl' : '/imap/notls';
     $mailbox = '{' . $config['imap_host'] . ':' . $config['imap_port'] . $flags . '}INBOX';
-    $inbox = @imap_open($mailbox, $config['imap_user'], $config['imap_pass'], 0, 1);
+    // Open read-only so /inbox and /read never flip messages to \Seen.
+    $inbox = @imap_open($mailbox, $config['imap_user'], $config['imap_pass'], OP_READONLY, 1);
     if (!$inbox) {
         error_log('bot imap connection failed');
         return false;
@@ -285,6 +361,10 @@ function bot_handle_update(array $update)
     }
 
     if ($text === '/inbox' || $text === '/mail' || strpos($text, '/inbox@') === 0) {
+        if (!bot_rate_limit_ok('inbox', 10)) {
+            bot_send_message($chatId, 'Juda ko‘p so‘rov. Bir daqiqadan keyin qayta urinib ko‘ring.');
+            return;
+        }
         $inbox = bot_imap_open();
         if (!$inbox) {
             bot_send_message($chatId, 'Email qutisiga ulanib bo‘lmadi. Keyinroq urinib ko‘ring.');
@@ -306,6 +386,10 @@ function bot_handle_update(array $update)
     }
 
     if (preg_match('#^/read(?:@[A-Za-z0-9_]+)?\s+([0-9]{1,12})$#', $text, $matches)) {
+        if (!bot_rate_limit_ok('read', 20)) {
+            bot_send_message($chatId, 'Juda ko‘p so‘rov. Bir daqiqadan keyin qayta urinib ko‘ring.');
+            return;
+        }
         $inbox = bot_imap_open();
         if (!$inbox) {
             bot_send_message($chatId, 'Email qutisiga ulanib bo‘lmadi.');
@@ -325,6 +409,10 @@ function bot_handle_update(array $update)
     }
 
     if (preg_match('#^/send(?:@[A-Za-z0-9_]+)?\s+(.+)$#s', $text, $matches)) {
+        if (!bot_rate_limit_ok('send', 10)) {
+            bot_send_message($chatId, 'Juda ko‘p email so‘rovi. Bir daqiqadan keyin qayta urinib ko‘ring.');
+            return;
+        }
         $parts = explode('|', $matches[1], 3);
         if (count($parts) < 3) {
             bot_send_message($chatId, 'Format: /send email@example.com | Mavzu | Matn');
@@ -367,6 +455,15 @@ function bot_handle_webhook()
     $update = json_decode($raw, true);
     if (!is_array($update)) {
         http_response_code(200);
+        echo 'ok';
+        exit;
+    }
+
+    $updateId = isset($update['update_id']) ? (int) $update['update_id'] : 0;
+    if ($updateId > 0 && bot_is_duplicate_update($updateId)) {
+        // Telegram retry of an update we already processed.
+        http_response_code(200);
+        header('Content-Type: text/plain; charset=utf-8');
         echo 'ok';
         exit;
     }

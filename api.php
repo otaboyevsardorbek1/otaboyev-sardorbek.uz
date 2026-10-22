@@ -1,10 +1,11 @@
 <?php
 // Compatible with PHP 7.1
 
-// Do not expose stack traces or paths on production responses.
-if (getenv('APP_ENV') !== 'local') {
-    ini_set('display_errors', '0');
-}
+// Never expose stack traces or paths in responses. Errors must go to the
+// server log only; a stray APP_ENV value must not turn them back on.
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+error_reporting(E_ALL);
 
 header_remove('X-Powered-By');
 header('X-Content-Type-Options: nosniff');
@@ -15,19 +16,23 @@ header('Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
 header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
 header('Cross-Origin-Resource-Policy: same-origin');
 header('X-Permitted-Cross-Domain-Policies: none');
-header('Strict-Transport-Security: max-age=31536000');
 
 require_once __DIR__ . '/backend/contact.php';
+
+// HSTS is only meaningful over HTTPS. Sending it on a plain HTTP response is
+// ignored by browsers and hides misconfiguration; gate it explicitly.
+if (api_is_https()) {
+    header('Strict-Transport-Security: max-age=31536000');
+}
 
 $requestMethod = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $response = '';
 
 if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    $optionsPath = parse_url(isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/', PHP_URL_PATH);
-    $sensitiveOptionsPath = preg_match('#/api\.php/(websites|bot/webhook)/?$#', (string) $optionsPath);
-    if (strpos((string) $optionsPath, '/admin') === false && !$sensitiveOptionsPath) {
+    $optionsPath = getApiRequestPath();
+    if (api_is_public_read_path($optionsPath)) {
         header('Access-Control-Allow-Origin: *');
-        header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+        header('Access-Control-Allow-Methods: GET, OPTIONS');
         header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Api-Token, Authorization');
     }
     http_response_code(204);
@@ -50,6 +55,37 @@ function getApiRequestPath(): string
     }
 
     return '/' . trim($path, '/');
+}
+
+function api_is_https(): bool
+{
+    if (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off') {
+        return true;
+    }
+    if (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443) {
+        return true;
+    }
+
+    // Only trust the forwarded header when the deployment explicitly opts in.
+    $config = admin_config();
+    if (!empty($config['trust_proxy'])
+        && isset($_SERVER['HTTP_X_FORWARDED_PROTO'])
+        && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') {
+        return true;
+    }
+
+    return false;
+}
+
+// Wildcard CORS is limited to public, read-only JSON endpoints. Mutation
+// endpoints (form, bot, admin, token) stay same-origin only.
+function api_is_public_read_path(string $path): bool
+{
+    if (in_array($path, array('/profile', '/projects', '/health', '/status'), true)) {
+        return true;
+    }
+
+    return preg_match('#^/projects/[a-z0-9-]{1,80}/?$#', $path) === 1;
 }
 
 function getConfiguredApiToken(): ?string
@@ -648,6 +684,12 @@ function curl($url)
 function handleFormRequest()
 {
     $formId = isset($_POST['id']) ? trim((string) $_POST['id']) : '';
+
+    // Global per-IP flood guard for every form id (native and Sitejet-proxied).
+    if (contact_rate_limit_exceeded(10, 10)) {
+        return array('Too many submissions. Please try again later.', array('http_code' => 429));
+    }
+
     if ($formId === 'contact') {
         $payload = isset($_POST['form_contact']) && is_array($_POST['form_contact'])
             ? $_POST['form_contact']
@@ -661,9 +703,9 @@ function handleFormRequest()
 
 $requestPath = getApiRequestPath();
 
-if (strpos($requestPath, '/admin') !== 0 && $requestPath !== '/websites' && $requestPath !== '/bot/webhook') {
+if (api_is_public_read_path($requestPath)) {
     header('Access-Control-Allow-Origin: *');
-    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    header('Access-Control-Allow-Methods: GET, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Api-Token, Authorization');
 }
 
@@ -673,6 +715,7 @@ if ($requestPath === '/form_container/submit' && $_SERVER['REQUEST_METHOD'] === 
     $code = (int) ($result[1]['http_code'] ?? 200);
 
     header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-store');
     http_response_code($code);
     echo is_string($body) ? $body : json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;

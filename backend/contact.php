@@ -205,6 +205,31 @@ function contact_store_message(array $formConfig, $formId, array $data, array $a
     }
 }
 
+function contact_rate_limit_exceeded($max, $minutes)
+{
+    // Best-effort flood guard that also covers non-native (Sitejet) form IDs,
+    // where an attacker could otherwise rotate the form id to bypass limits.
+    try {
+        $pdo = content_db();
+    } catch (Exception $error) {
+        return false;
+    }
+
+    try {
+        $minutes = max(1, (int) $minutes);
+        $statement = $pdo->prepare(
+            'SELECT COUNT(*) FROM contact_messages
+             WHERE ip_hash = :ip_hash
+               AND created_at > DATE_SUB(NOW(), INTERVAL ' . $minutes . ' MINUTE)'
+        );
+        $statement->execute(array(':ip_hash' => contact_ip_hash()));
+        return (int) $statement->fetchColumn() >= (int) $max;
+    } catch (Exception $error) {
+        error_log('contact rate check unavailable: ' . $error->getMessage());
+        return false;
+    }
+}
+
 function contact_native_form_config($lang)
 {
     $labels = array(

@@ -162,3 +162,20 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
   CONSTRAINT fk_admin_audit_admin
     FOREIGN KEY (admin_id) REFERENCES admin_users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Telegram bot bridge guards: webhook retry idempotency and per-command limits.
+CREATE TABLE IF NOT EXISTS bot_updates_seen (
+  update_id BIGINT UNSIGNED NOT NULL,
+  seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (update_id),
+  KEY idx_bot_updates_seen_at (seen_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS bot_rate_limit (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  admin_id BIGINT UNSIGNED NOT NULL,
+  command VARCHAR(32) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_bot_rate_admin_cmd_time (admin_id, command, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

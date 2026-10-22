@@ -41,4 +41,14 @@ jobs:
         run: |
           test -f out/api.php
           test -f out/.htaccess
+          test -f out/404.html
           test -f out/uz/projects/gitinsight/index.html
+          test -f out/admin/index.html
+          test -f out/admin/verify/index.html
+          test -f out/admin/dashboard/index.html
+
+      - name: Verify no secrets in the build artifact
+        run: |
+          test ! -e out/config.local.php
+          test ! -e out/config.local.js
+          test ! -e out/github_keys.txt

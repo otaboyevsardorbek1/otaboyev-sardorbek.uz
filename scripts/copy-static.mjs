@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = process.cwd();
@@ -15,10 +15,22 @@ const copies = [
   ['favicon.svg', 'favicon.svg'],
   ['api.php', 'api.php'],
   ['backend', 'backend'],
-  ['config.local.php', 'config.local.php'],
   ['.htaccess', '.htaccess'],
   ['sitemap.xml', 'sitemap.xml'],
 ];
+
+// config.local.php is intentionally NOT copied. It holds DB, Telegram, mail
+// and IMAP secrets and must be placed in the web root manually during deploy
+// (mode 600), never shipped inside the build artifact. run_local.sh /
+// run_server.sh copy it into out/ for local previews only.
+const forbidden = ['config.local.php', 'config.local.js'];
+for (const name of forbidden) {
+  const stale = join(out, name);
+  if (existsSync(stale)) {
+    rmSync(stale, { force: true });
+    console.warn(`[copy-static] removed stale out/${name}`);
+  }
+}
 
 for (const [from, to] of copies) {
   const source = join(root, from);

@@ -1,6 +1,10 @@
 <?php
 // Copy this file to config.local.php and fill in the hosting details.
 // config.local.php is gitignored and must never be committed.
+//
+// Deployment: the build does NOT copy this file. Place it in the web root
+// manually with mode 600 (run_local.sh / run_server.sh copy it into out/ for
+// local previews only). Never ship it inside the build artifact.
 
 return array(
     // MySQL content database.
