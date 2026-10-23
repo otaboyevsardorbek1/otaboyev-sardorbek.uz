@@ -41,17 +41,16 @@ EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
 -- Safety net: promote the earliest active admin only when no active super
--- admin exists. Derived tables avoid MySQL error 1093.
+-- admin exists. Values are captured in user variables first so MySQL 5.7 does
+-- not raise errno 1093 ("can't specify target table for update in FROM
+-- clause") and the statement stays safe on MariaDB 10.2+.
+SET @has_active_super := (
+  SELECT COUNT(*) FROM admin_users WHERE is_active = 1 AND role = 'super'
+);
+SET @first_active_admin := (
+  SELECT MIN(id) FROM admin_users WHERE is_active = 1
+);
 UPDATE admin_users
    SET role = 'super'
- WHERE is_active = 1
-   AND id = (
-     SELECT id FROM (
-       SELECT MIN(id) AS id FROM admin_users WHERE is_active = 1
-     ) AS first_active_admin
-   )
-   AND NOT EXISTS (
-     SELECT id FROM (
-       SELECT id FROM admin_users WHERE is_active = 1 AND role = 'super'
-     ) AS active_super_admins
-   );
+ WHERE id = @first_active_admin
+   AND @has_active_super = 0;

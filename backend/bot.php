@@ -101,6 +101,7 @@ function bot_find_admin($telegramId)
         'display_name' => null,
         'telegram_username' => null,
         'is_active' => 1,
+        'role' => 'super',
     );
 
     if (!$pdo) {
@@ -110,7 +111,7 @@ function bot_find_admin($telegramId)
 
     try {
         $statement = $pdo->prepare(
-            'SELECT id, telegram_id, email, display_name, telegram_username, is_active
+            'SELECT id, telegram_id, email, display_name, telegram_username, is_active, role
              FROM admin_users WHERE telegram_id = :tg LIMIT 1'
         );
         $statement->execute(array(':tg' => $telegramId));
@@ -414,6 +415,17 @@ function bot_send_email($to, $subject, $body, $replyTo = '')
     }
     if ($subject === '' || $body === '') {
         return array(false, 'Subject and body are required');
+    }
+
+    if ($config['driver'] === 'log') {
+        $mail = admin_config()['mail'];
+        $appEnv = isset(admin_config()['app_env']) ? (string) admin_config()['app_env'] : 'production';
+        if ($appEnv === 'production' || $mail['log_file'] === '') {
+            return array(false, 'Log mail driver is disabled');
+        }
+        $line = gmdate('c') . ' to=' . $to . ' subject=' . $subject . ' body=' . $body . "\n";
+        $written = @file_put_contents($mail['log_file'], $line, FILE_APPEND | LOCK_EX);
+        return $written === false ? array(false, 'Unable to write mail log') : array(true, '');
     }
 
     if ($config['driver'] === 'smtp') {
