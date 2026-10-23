@@ -114,6 +114,7 @@ Envelope:
 | GET | `/api.php/projects/{slug}?lang=uz` | full detail: description, results, stack notes |
 | POST | `/api.php/form_container/submit` | `id=contact`: native validation + `contact_messages` + 5/10 min IP limit; other IDs: Sitejet contract (`id`, `form_<id>[ed-f-N]`) |
 | POST | `/api.php/bot/webhook` | private Telegram bot bridge: `X-Telegram-Bot-Api-Secret-Token`, numeric admin ID, `message` updates only |
+| GET | `/api.php/bot/health` | read-only monitoring flags (`configured`, `webhook_secret`, `imap`, `database`); no tokens, secrets, passwords or email |
 | GET | `/api.php/websites` | token-protected site list (`X-Api-Token` or `Authorization: Bearer`) |
 
 Other paths are proxied to `https://api.sitehub.io`; CDN image URLs are rewritten to `/api.php`/`https://inter-cdn.com` per the existing proxy rules.
@@ -349,7 +350,7 @@ DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... ./run_local.sh
 - Invalid `lang` → `uz` fallback.
 - Missing slug → `404 project_not_found`.
 - No DB → `503 db_unavailable`; frontend falls back to static content.
-- CORS `*` only on public read-only endpoints (`/profile`, `/projects`, `/projects/{slug}`, `/health`, `/status`); `/form_container/submit`, `/admin/*`, `/bot/webhook`, `/websites` send **no** CORS header.
+- CORS `*` only on public read-only endpoints (`/profile`, `/projects`, `/projects/{slug}`, `/health`, `/status`); `/form_container/submit`, `/admin/*`, `/bot/webhook`, `/bot/health`, `/websites` send **no** CORS header.
 - No HSTS over HTTP; HTTPS sends `Strict-Transport-Security: max-age=31536000`.
 
 ### 7.5. Contact form and admin inbox
@@ -427,6 +428,9 @@ send_update() {
 | # | Test | Expected |
 |---|---|---|
 | 7.8.1 | `GET /api.php/bot/webhook` | `405`, `Allow: POST` |
+| 7.8.1a | `GET /api.php/bot/health` | `200`, `{configured,webhook_secret,imap,database}` — only booleans, no token/secret/password |
+| 7.8.1b | `POST /api.php/bot/health` | `405`, `Allow: GET` |
+| 7.8.1c | DB down + `/bot/health` | `200`, `database:false`; one `bot alert` line in the error log |
 | 7.8.2 | `POST` without secret | `403` |
 | 7.8.3 | `POST` with wrong secret | `403` |
 | 7.8.4 | `POST` correct secret, `from.id=999` (unknown) | `200 'ok'`, **no** Telegram message |

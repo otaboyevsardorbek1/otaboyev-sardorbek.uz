@@ -107,7 +107,7 @@ Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `api.php` `display_errors=0` va `log
 - [x] Bot `update_id` idempotency, per-admin rate limit (`bot_updates_seen`, `bot_rate_limit`), `/messages`/`/message`/`/reply`/`/stats` va contact forma → Telegram xabarnomasi.
 - [ ] Logrotate: `bot.log` va PHP error log 10 MB (cPanel).
 - [ ] Kunlik DB backup + tashqi nusxa (cPanel/S3).
-- [ ] Monitoring/alerting: admin login fail, webhook secret fail, DB/IMAP fail (tashqi monitor yoki `alert_admin()`).
+- [ ] Monitoring/alerting: admin login fail, webhook secret fail, DB/IMAP fail (tashqi monitor yoki `alert_admin()`). Implementatsiya tayyor: `bot_alert_admin()`, `GET /api.php/bot/health` va 5 daqiqalik `monitor.sh` (`/api.php/health`, `/api.php/bot/health`, `getWebhookInfo.pending_update_count`); productionda cron o‘rnatilishi kerak.
 - [x] Bot IMAP `panel2.eskiz.uz:993/imap/ssl`; cPanel `mail()` orqali `/send` yetkazilgan.
 - [ ] Haqiqiy Telegram admin xabari bilan inbound webhook testi (fake update bilan sinalgan).
 - [x] SSH key passphrase rotated 2026-10-22; new value repo tashqarisida, mode 600.

@@ -416,10 +416,12 @@ cd /home/host9590/apps/otaboyev-sardorbek.uz
 ./scripts/production-ops.sh migrate   # project-sections, contact-messages, bot-guards
 ./scripts/production-ops.sh deploy    # npm ci + check + build, keyin tar-deploy
 ./scripts/production-ops.sh logs      # user-level logrotate + kunlik cron
-./scripts/production-ops.sh cron      # kunlik backup (14 kun) + 5 daqiqalik health monitor
+./scripts/production-ops.sh cron      # kunlik backup (14 kun) + 5 daqiqalik health/bot monitor
 ./scripts/production-ops.sh maildns   # SPF / DKIM / DMARC tekshiruvi
-./scripts/production-ops.sh verify    # 12 ta jonli HTTP tekshiruv
+./scripts/production-ops.sh verify    # 13 ta jonli HTTP tekshiruv
 ```
+
+Monitor har 5 daqiqada `/api.php/health` va `/api.php/bot/health` ni, shuningdek `getWebhookInfo.pending_update_count` ni tekshiradi; xato bo‘lsa Telegram orqali egasiga xabar yuboradi (`monitor.log` ga yozadi).
 
 Faqat build qilingan artefaktni chiqarish uchun `SKIP_BUILD=1 ./scripts/production-ops.sh deploy`. Yo‘llar `APP_DIR`, `WEB_ROOT`, `BACKUP_DIR`, `LOG_DIR`, `SITE_URL` env bilan ustidan yoziladi. Backup va monitoring cron’lari `# otaboyev-ops:backup` / `# otaboyev-ops:monitor` belgilari bilan yangilanadi (dublikat yig‘ilmaydi).
 
@@ -460,6 +462,7 @@ sudo find /var/www/otaboyev-sardorbek.uz -type f -exec chmod 644 {} \;
 | `/api.php/projects/{slug}?lang=uz` | loyiha tafsiloti: `description`, `results[]`, `stack_notes[]` |
 | `POST /api.php/form_container/submit` | `id=contact` native contact form; boshqa ID’lar Sitejet contracti |
 | `POST /api.php/bot/webhook` | private Telegram bot webhook; secret header + admin ID |
+| `GET /api.php/bot/health` | monitoring: `configured`, `webhook_secret`, `imap`, `database` booleanlari (maxfiy qiymat yo‘q) |
 | `/api.php/health` | `{"status":"ok"}` |
 | `/api.php/websites` | tokenli endpoint |
 
