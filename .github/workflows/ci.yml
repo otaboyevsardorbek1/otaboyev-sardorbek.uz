@@ -4,51 +4,250 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  check:
+  lint-and-test:
+    name: Lint, schema, RBAC, bot guards, build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test_portfolio
+          MYSQL_USER: test
+          MYSQL_PASSWORD: test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Set up PHP
+      - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: '8.2'
+          extensions: pdo_mysql, curl, openssl, mbstring, imap
           coverage: none
 
-      - name: Install dependencies
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install npm dependencies
         run: npm ci
 
-      - name: Lint PHP and JS
+      - name: PHP/JS/Bash lint
         run: npm run check
+
+      - name: Static RBAC and bot guards present
+        run: |
+          set -e
+          echo "== Files =="
+          test -f database/schema.sql
+          test -f database/migrate-bot-guards.sql
+          test -f database/migrate-admin-role.sql
+          test -f scripts/set-bot-commands.sh
+          test -f tests/bot-guard-test.php
+          echo "OK: required files present"
+
+          echo "== schema.sql: admin_users.role =="
+          grep -q "role VARCHAR(20) NOT NULL DEFAULT 'admin'" database/schema.sql
+          grep -q "idx_admin_users_role" database/schema.sql
+          echo "OK: role column in schema.sql"
+
+          echo "== backend/admin.php: RBAC guards =="
+          grep -q "function admin_require_super" backend/admin.php
+          grep -q "function admin_has_other_active_super" backend/admin.php
+          grep -q "last_super_admin" backend/admin.php
+          grep -q "admin_require_super(\$session)" backend/admin.php
+          echo "OK: admin RBAC guards"
+
+          echo "== backend/bot.php: multi-admin =="
+          grep -q "function bot_find_admin" backend/bot.php
+          grep -q "function bot_notify_admins" backend/bot.php
+          grep -q "function bot_audit" backend/bot.php
+          grep -q "function bot_rate_limit_ok(\$telegramId" backend/bot.php
+          grep -q "bot_find_admin(\$fromId)" backend/bot.php
+          echo "OK: bot multi-admin guards"
+
+          echo "== backend/contact.php: bot_notify_admins =="
+          grep -q "bot_notify_admins" backend/contact.php
+          echo "OK: contact notify"
+
+          echo "== scripts/set-bot-commands.sh =="
+          grep -q "setMyCommands" scripts/set-bot-commands.sh
+          echo "OK: setMyCommands script"
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -utest -ptest --silent; then
+              echo "MySQL ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MySQL did not become ready" >&2
+          exit 1
+
+      - name: Import schema + seed + bot guards
+        env:
+          MYSQL_PWD: test
+        run: |
+          mysql -h 127.0.0.1 -utest test_portfolio < database/schema.sql
+          mysql -h 127.0.0.1 -utest test_portfolio < database/seed.sql
+          mysql -h 127.0.0.1 -utest test_portfolio < database/migrate-bot-guards.sql
+
+      - name: Verify admin_users.role column
+        env:
+          MYSQL_PWD: test
+        run: |
+          set -e
+          ROW="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SHOW COLUMNS FROM admin_users LIKE 'role'")"
+          echo "COLUMN: $ROW"
+          [ -n "$ROW" ] || { echo "role column missing" >&2; exit 1; }
+          echo "$ROW" | grep -qE '^role[[:space:]]+varchar\(20\)'
+          DEFAULT="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SELECT COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='test_portfolio' AND TABLE_NAME='admin_users' AND COLUMN_NAME='role'")"
+          [ "$DEFAULT" = "admin" ] || { echo "role default expected 'admin', got '$DEFAULT'" >&2; exit 1; }
+          IDX="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SHOW INDEX FROM admin_users WHERE Key_name='idx_admin_users_role'")"
+          [ -n "$IDX" ] || { echo "idx_admin_users_role missing" >&2; exit 1; }
+          echo "OK: role column and index"
+
+      - name: Bot guards migration is idempotent
+        env:
+          MYSQL_PWD: test
+        run: |
+          set -e
+          mysql -h 127.0.0.1 -utest test_portfolio < database/migrate-bot-guards.sql
+          mysql -h 127.0.0.1 -utest test_portfolio < database/migrate-bot-guards.sql
+          mysql -h 127.0.0.1 -utest test_portfolio -e "SHOW TABLES LIKE 'bot_updates_seen';"
+          mysql -h 127.0.0.1 -utest test_portfolio -e "SHOW TABLES LIKE 'bot_rate_limit';"
+          echo "OK: bot guards idempotent"
+
+      - name: Admin-role migration on legacy-shaped DB
+        env:
+          MYSQL_PWD: test
+        run: |
+          set -e
+          # 1. Insert a legacy admin (before the role column exists in this shape).
+          mysql -h 127.0.0.1 -utest test_portfolio -e \
+            "INSERT INTO admin_users (telegram_id, email, display_name, is_active) VALUES (111111, 'legacy@example.com', 'Legacy', 1);"
+
+          # 2. Drop the role column (and its index) to simulate a legacy DB.
+          mysql -h 127.0.0.1 -utest test_portfolio -e "ALTER TABLE admin_users DROP COLUMN role;"
+          mysql -h 127.0.0.1 -utest test_portfolio -N -e "SHOW COLUMNS FROM admin_users LIKE 'role'" | grep -q . \
+            && { echo "role column still present after drop" >&2; exit 1; } || true
+
+          # 3. Apply the migration once.
+          mysql -h 127.0.0.1 -utest test_portfolio < database/migrate-admin-role.sql
+
+          # 4. Verify role column + at least one super + legacy admin promoted.
+          mysql -h 127.0.0.1 -utest test_portfolio -N -e "SHOW COLUMNS FROM admin_users LIKE 'role'" | grep -qE '^role[[:space:]]+varchar\(20\)'
+          LEGACY_ROLE="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SELECT role FROM admin_users WHERE telegram_id=111111")"
+          [ "$LEGACY_ROLE" = "super" ] || { echo "legacy admin not promoted to super: $LEGACY_ROLE" >&2; exit 1; }
+          ACTIVE_SUPERS="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SELECT COUNT(*) FROM admin_users WHERE role='super' AND is_active=1")"
+          [ "$ACTIVE_SUPERS" -ge 1 ] || { echo "no active super" >&2; exit 1; }
+          echo "OK: legacy migration path"
+
+      - name: Admin-role migration is idempotent
+        env:
+          MYSQL_PWD: test
+        run: |
+          set -e
+          mysql -h 127.0.0.1 -utest test_portfolio < database/migrate-admin-role.sql
+          mysql -h 127.0.0.1 -utest test_portfolio -N -e "SHOW COLUMNS FROM admin_users LIKE 'role'" | grep -qE '^role[[:space:]]+varchar\(20\)'
+          SUPERS="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SELECT COUNT(*) FROM admin_users WHERE role='super'")"
+          [ "$SUPERS" = "1" ] || { echo "second run changed super count: $SUPERS" >&2; exit 1; }
+          IDX="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SHOW INDEX FROM admin_users WHERE Key_name='idx_admin_users_role'")"
+          [ -n "$IDX" ] || { echo "idx_admin_users_role missing after second run" >&2; exit 1; }
+          echo "OK: role migration idempotent"
+
+      - name: Last-super guard SQL
+        env:
+          MYSQL_PWD: test
+        run: |
+          set -e
+          mysql -h 127.0.0.1 -utest test_portfolio <<'SQL'
+          DELETE FROM admin_users;
+          INSERT INTO admin_users (telegram_id, email, is_active, role) VALUES
+            (201, 'a@x.c', 1, 'super'),
+            (202, 'b@x.c', 1, 'super'),
+            (203, 'c@x.c', 1, 'admin');
+          SQL
+
+          ID_A="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SELECT id FROM admin_users WHERE telegram_id=201")"
+          ID_B="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SELECT id FROM admin_users WHERE telegram_id=202")"
+
+          OTHER_A="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SELECT COUNT(*) FROM admin_users WHERE is_active=1 AND role='super' AND id <> $ID_A")"
+          [ "$OTHER_A" = "1" ] || { echo "expected 1 other super for A, got $OTHER_A" >&2; exit 1; }
+
+          OTHER_B="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SELECT COUNT(*) FROM admin_users WHERE is_active=1 AND role='super' AND id <> $ID_B")"
+          [ "$OTHER_B" = "1" ] || { echo "expected 1 other super for B, got $OTHER_B" >&2; exit 1; }
+
+          mysql -h 127.0.0.1 -utest test_portfolio -e "UPDATE admin_users SET is_active=0 WHERE id=$ID_B"
+          LAST_SUPER="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SELECT COUNT(*) FROM admin_users WHERE is_active=1 AND role='super' AND id <> $ID_A")"
+          [ "$LAST_SUPER" = "0" ] || { echo "expected 0 other supers for the last one, got $LAST_SUPER" >&2; exit 1; }
+          echo "OK: last-super SQL guard"
+
+      - name: Bot guard unit tests (real DB, no Telegram)
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_SOCKET: ''
+          DB_NAME: test_portfolio
+          DB_USER: test
+          DB_PASS: test
+        run: php tests/bot-guard-test.php
 
       - name: Build static export
         run: npm run build
 
-      - name: Verify exported runtime files
+      - name: Export artifact is secret-free
         run: |
+          set -e
           test -f out/api.php
           test -f out/.htaccess
           test -f out/404.html
-          test -f out/uz/projects/gitinsight/index.html
-          test -f out/admin/index.html
-          test -f out/admin/verify/index.html
-          test -f out/admin/dashboard/index.html
+          test -d out/backend
+          test -d out/admin
+          test ! -f out/config.local.php
+          test ! -f out/config.local.js
+          test ! -f out/github_keys.txt
+          test ! -f out/server_keys.txt
+          test ! -d out/database
+          test -d out/uz
+          test -d out/en
+          test -d out/ru
+          test -d out/uz/projects
+          test -d out/en/projects
+          test -d out/ru/projects
+          echo "OK: export artifact"
 
-      - name: Verify no secrets in the build artifact
-        run: |
-          test ! -e out/config.local.php
-          test ! -e out/config.local.js
-          test ! -e out/github_keys.txt
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-failures
+          path: |
+            err.log
+            out/
+          retention-days: 3
