@@ -379,6 +379,22 @@ tar -C out --exclude='config.local.php' -cf - . | tar -C /home/host9590/public_h
 
 Deploydan keyin `/api.php/health`, `/uz/`, `/admin/config` va login oqimini tekshiring.
 
+### `scripts/production-ops.sh` (tavsiya etiladi)
+
+Serverda cPanel user sifatida ishlatiladi; har bir qadam idempotent. Deploy oldidan web root snapshot’i olinadi va `config.local.php` hamda `.well-known/` saqlanadi:
+
+```bash
+cd /home/host9590/apps/otaboyev-sardorbek.uz
+./scripts/production-ops.sh migrate   # project-sections, contact-messages, bot-guards
+./scripts/production-ops.sh deploy    # npm ci + check + build, keyin tar-deploy
+./scripts/production-ops.sh logs      # user-level logrotate + kunlik cron
+./scripts/production-ops.sh cron      # kunlik backup (14 kun) + 5 daqiqalik health monitor
+./scripts/production-ops.sh maildns   # SPF / DKIM / DMARC tekshiruvi
+./scripts/production-ops.sh verify    # 12 ta jonli HTTP tekshiruv
+```
+
+Faqat build qilingan artefaktni chiqarish uchun `SKIP_BUILD=1 ./scripts/production-ops.sh deploy`. Yo‘llar `APP_DIR`, `WEB_ROOT`, `BACKUP_DIR`, `LOG_DIR`, `SITE_URL` env bilan ustidan yoziladi. Backup va monitoring cron’lari `# otaboyev-ops:backup` / `# otaboyev-ops:monitor` belgilari bilan yangilanadi (dublikat yig‘ilmaydi).
+
 **Muhim:** cPanel PHP versiyasi 7.1+ bo‘lsin; `pdo_mysql`, `curl`, `openssl`, `imap` kengaytmalari yoqilgan bo‘lsin. `.htaccess` uchun `mod_rewrite` va `mod_headers` kerak.
 
 ### Repo klonlash (ixtiyoriy)

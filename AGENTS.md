@@ -14,6 +14,7 @@ Oxirgi audit: **2026-10-22**. Joriy ish va backlog — [tz.md](tz.md), uzoq mudd
 | CI | `.github/workflows/ci.yml` — push/PR’da `npm ci`, `npm run check`, `npm run build` va export fayllarini tekshiradi |
 | Lokal preview | `./run_local.sh` (`APP_ENV=local`, default `127.0.0.1:8000`); to‘xtatish `./stop_local.sh` |
 | Server preview | `./run_server.sh` (`APP_ENV=production`, default `127.0.0.1:8081`); to‘xtatish `./stop_server.sh` |
+| Production ops | `./scripts/production-ops.sh {migrate|build|deploy|cron|logs|maildns|verify|all}` — serverda cPanel user sifatida; deploy snapshot olib `config.local.php` va `.well-known/` ni saqlaydi, `cron` kunlik backup + 5 daqiqalik health monitor, `logs` user-level logrotate, `maildns` SPF/DKIM/DMARC, `verify` jonli HTTP tekshiruvlari |
 | Export preview (manual) | `APP_ENV=local SITE_URL=http://127.0.0.1:8000 DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out` |
 | Sintaksis tekshiruvi | `npm run check` — `php -l api.php`, backend fayllari, `scripts/php-server-router.php`, `node --check js/portfolio.js`, run/stop skriptlari `bash -n`; JSX ni `npm run build` tekshiradi |
 | API health | `curl -s http://127.0.0.1:8000/api.php/health` |

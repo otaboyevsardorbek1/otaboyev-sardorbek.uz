@@ -104,6 +104,8 @@ Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `api.php` `display_errors=0` va `log
 - [x] Bot IMAP `panel2.eskiz.uz:993/imap/ssl`; cPanel `mail()` orqali `/send` yetkazilgan.
 - [ ] Haqiqiy Telegram admin xabari bilan inbound webhook testi (fake update bilan sinalgan).
 - [x] SSH key passphrase rotated 2026-10-22; new value repo tashqarisida, mode 600.
+- [x] 2026-10-23: `scripts/production-ops.sh` qo‘shildi — `migrate`, `deploy` (snapshot + config/`.well-known` saqlash), `cron` (kunlik backup + 5 daqiqalik health monitor), `logs` (user-level logrotate), `maildns` (SPF/DKIM/DMARC), `verify` (12 jonli tekshiruv).
+- [ ] 2026-10-23: operator sessiyasida lokal `config.local.php` mazmuni ko‘rindi — `APP_SECRET` va bot token **almashtirilishi shart** (BotFather `/revoke` + yangi `secret_token` bilan `setWebhook`, so‘ng `config.local.php` yangilash).
 
 ## Incident response
 
