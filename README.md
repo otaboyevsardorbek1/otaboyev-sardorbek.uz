@@ -57,6 +57,8 @@ mysql -u USER -p DB_NAME < database/seed.sql
 # mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
 # Telegram bot guard jadvallari uchun (idempotent):
 # mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
+# Admin rollari (super/admin) uchun (idempotent):
+# mysql -u USER -p DB_NAME < database/migrate-admin-role.sql
 # seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
 # u mavjud admin tahrirlarini bosib ketadi.
 ```
@@ -109,7 +111,7 @@ Admin panel `/admin/` da. Kirish ikki bosqichli:
 1. Telegram Login Widget admin Telegram akkauntini tasdiqlaydi.
 2. Admin emailiga 6 xonali kod yuboriladi; kod 10 daqiqa amal qiladi va 5 urinishdan keyin bekor qilinadi.
 
-Panelda profil (ism, email, GitHub, Telegram, avatar va uch tildagi role/bio/quick_text/location), loyihalar (slug, kategoriya, havolalar, tartib, faollik va uch tildagi tag/title/summary/description/tech/results/stack_notes), kelgan xabarlar va qo‘shimcha adminlar boshqariladi. `results` va `stack_notes` har bir qatorda bitta element sifatida kiritiladi. O‘zgarishlar `profiles`, `profile_translations`, `projects`, `project_translations`, `contact_messages` va `admin_users` jadvallariga yoziladi; loyiha o‘zgarishi `sitemap.xml` ni avtomatik yangilaydi va detail sahifada API fetch’dan keyin ko‘rinadi.
+Panelda profil (ism, email, GitHub, Telegram, avatar va uch tildagi role/bio/quick_text/location), loyihalar (slug, kategoriya, havolalar, tartib, faollik va uch tildagi tag/title/summary/description/tech/results/stack_notes), kelgan xabarlar va super admin uchun qo‘shimcha adminlar boshqariladi. `results` va `stack_notes` har bir qatorda bitta element sifatida kiritiladi. O‘zgarishlar `profiles`, `profile_translations`, `projects`, `project_translations`, `contact_messages` va `admin_users` jadvallariga yoziladi; loyiha o‘zgarishi `sitemap.xml` ni avtomatik yangilaydi va detail sahifada API fetch’dan keyin ko‘rinadi.
 
 ### 1. BotFather
 
@@ -221,11 +223,15 @@ mysql -u USER -p DB_NAME < database/seed.sql
 # mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
 # Telegram bot guard jadvallari uchun (idempotent):
 # mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
+# Admin rollari (super/admin) uchun (idempotent):
+# mysql -u USER -p DB_NAME < database/migrate-admin-role.sql
 # seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
 # u mavjud admin tahrirlarini bosib ketadi.
 ```
 
-So‘ng `/admin/` ni oching. Birinchi muvaffaqiyatli Telegram callback `ADMIN_TELEGRAM_ID` asosida `admin_users` yozuvini yaratadi. Keyingi adminlarni `/admin/dashboard/` → **Adminlar** bo‘limidan qo‘shish/tahrirlash/o‘chirish mumkin; Telegram ID va OTP email to‘g‘ri bo‘lsa ular ham kira oladi. O‘z hisobingizni o‘chirish/deaktiv qilish va oxirgi faol adminni olib tashlash bloklangan.
+So‘ng `/admin/` ni oching. Birinchi muvaffaqiyatli Telegram callback `ADMIN_TELEGRAM_ID` asosida `admin_users` yozuvini `super` roli bilan yaratadi. Keyingi adminlarni `/admin/dashboard/` → **Adminlar** bo‘limidan qo‘shish/tahrirlash/o‘chirish mumkin; Telegram ID va OTP email to‘g‘ri bo‘lsa ular ham kira oladi. O‘z hisobingizni o‘chirish/deaktiv qilish, oxirgi faol adminni olib tashlash va oxirgi faol super adminni o‘chirish/deaktiv qilish/rolini pasaytirish bloklangan.
+
+Adminlar ikki rolda: **Super** (boshqa adminlarni qo‘shadi/o‘chiradi, rolni o‘zgartiradi) va **Admin** (faqat profil, loyiha, inbox). `Adminlar` tabi va `/api.php/admin/admins*` endpointlari faqat super admin uchun; oddiy admin `403 forbidden` oladi.
 
 ### Admin API
 
@@ -244,8 +250,8 @@ So‘ng `/admin/` ni oching. Birinchi muvaffaqiyatli Telegram callback `ADMIN_TE
 | `GET /api.php/admin/messages[?count=1\|unread=1]` | inbox count/ro‘yxat |
 | `GET/PUT/DELETE /api.php/admin/messages/{id}` | xabar / read-unread / o‘chirish |
 | `POST /api.php/admin/sitemap` | `sitemap.xml` ni qayta generatsiya qilish |
-| `GET/POST /api.php/admin/admins` | adminlar ro‘yxati / yangi admin |
-| `GET/PUT/DELETE /api.php/admin/admins/{id}` | adminni o‘qish/tahrirlash/o‘chirish |
+| `GET/POST /api.php/admin/admins` | adminlar ro‘yxati / yangi admin (faqat `super`) |
+| `GET/PUT/DELETE /api.php/admin/admins/{id}` | adminni o‘qish/tahrirlash/o‘chirish (faqat `super`) |
 
 `POST`, `PUT`, `DELETE` so‘rovlarida `X-CSRF-Token` header majburiy. Admin endpointlar CORS header qaytarmaydi; ular faqat same-origin uchun. `Origin`/`Referer` `site_url` bilan strict host/scheme/port bo‘yicha solishtiriladi; `Origin: null` rad etiladi. Ikkala header bo‘lmasa (CLI) `X-Requested-With: XMLHttpRequest` talab qilinadi. Sitemap fayli web rootda PHP yoza oladigan bo‘lishi kerak; aks holda `500 sitemap_write_failed` qaytadi.
 
@@ -357,7 +363,7 @@ npm run build
 ### cPanel deploy
 
 1. cPanel → **MySQL Databases**: baza va foydalanuvchi yarating, foydalanuvchiga bazaga ruxsat bering.
-2. phpMyAdmin → **Import**: yangi baza uchun `database/schema.sql`, keyin `database/seed.sql`; eski bazada avval `database/migrate-project-sections.sql`, keyin `database/migrate-contact-messages.sql` va `database/migrate-bot-guards.sql` (idempotent) ni import qiling. `seed.sql` mavjud admin tahrirlarini bosib ketadi.
+2. phpMyAdmin → **Import**: yangi baza uchun `database/schema.sql`, keyin `database/seed.sql`; eski bazada avval `database/migrate-project-sections.sql`, keyin `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql` va `database/migrate-admin-role.sql` (idempotent) ni import qiling. `seed.sql` mavjud admin tahrirlarini bosib ketadi.
 3. `config.local.example.php` dan `config.local.php` yarating; DB, Telegram, email va `app_secret` ni to‘ldiring.
 4. Lokalda yoki Node mavjud muhitda `npm ci && npm run build`.
 5. `out/` ichidagi barcha fayllarni cPanel **File Manager** orqali `public_html/` ga yuklang. `out/` papkasining o‘zini emas, ichidagi `api.php`, `backend/`, `.htaccess`, `index.html`, `admin/`, `uz/`, `en/`, `ru/`, `_next/`, `files/` ni yuklang.
@@ -574,6 +580,8 @@ mysql -u USER -p DB_NAME < database/seed.sql
 # mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
 # Telegram bot guard jadvallari uchun (idempotent):
 # mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
+# Admin rollari (super/admin) uchun (idempotent):
+# mysql -u USER -p DB_NAME < database/migrate-admin-role.sql
 # seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
 # u mavjud admin tahrirlarini bosib ketadi.
 ```

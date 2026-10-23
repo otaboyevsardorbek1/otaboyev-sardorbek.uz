@@ -244,7 +244,8 @@ function admin_lookup_session($pdo, $touch)
 
     $statement = $pdo->prepare(
         'SELECT s.id AS session_id, s.admin_id, s.expires_at, s.last_seen_at,
-                a.telegram_id, a.email, a.display_name, a.telegram_username, a.last_login_at
+                a.telegram_id, a.email, a.display_name, a.telegram_username,
+                a.role, a.last_login_at
          FROM admin_sessions s
          INNER JOIN admin_users a ON a.id = s.admin_id
          WHERE s.token_hash = :token_hash
@@ -284,6 +285,24 @@ function admin_require_csrf($session)
     if ($provided === '' || !hash_equals($expected, $provided)) {
         admin_fail('Invalid CSRF token', 'csrf_failed', 403);
     }
+}
+
+function admin_require_super($session)
+{
+    $role = isset($session['row']['role']) ? (string) $session['row']['role'] : '';
+    if ($role !== 'super') {
+        admin_fail('Super admin permission required', 'forbidden', 403);
+    }
+}
+
+function admin_has_other_active_super($pdo, $exceptId)
+{
+    $statement = $pdo->prepare(
+        "SELECT COUNT(*) FROM admin_users
+         WHERE is_active = 1 AND role = 'super' AND id <> :id"
+    );
+    $statement->execute(array(':id' => (int) $exceptId));
+    return (int) $statement->fetchColumn() > 0;
 }
 
 function admin_audit($pdo, $adminId, $action, $entity, $entityId, $details)
@@ -407,8 +426,9 @@ function admin_telegram_validate($query)
 
 function admin_find_or_bootstrap_user($pdo, array $telegramUser)
 {
+    $config = admin_config();
     $statement = $pdo->prepare(
-        'SELECT id, telegram_id, email, display_name, telegram_username, is_active, last_login_at
+        'SELECT id, telegram_id, email, display_name, telegram_username, is_active, role, last_login_at
          FROM admin_users WHERE telegram_id = :telegram_id LIMIT 1'
     );
     $statement->execute(array(':telegram_id' => $telegramUser['id']));
@@ -429,18 +449,17 @@ function admin_find_or_bootstrap_user($pdo, array $telegramUser)
             $row['display_name'] = $displayName;
             $row['telegram_username'] = $telegramUser['username'];
         }
-        return $row;
+        return admin_promote_bootstrap_super($pdo, $row, $config);
     }
 
-    $config = admin_config();
     if ((string) $telegramUser['id'] !== (string) $config['telegram_id']) {
         return null;
     }
 
     $displayName = trim($telegramUser['first_name'] . ' ' . $telegramUser['last_name']);
     $insert = $pdo->prepare(
-        'INSERT INTO admin_users (telegram_id, email, display_name, telegram_username, is_active)
-         VALUES (:telegram_id, :email, :display_name, :username, 1)'
+        'INSERT INTO admin_users (telegram_id, email, display_name, telegram_username, is_active, role)
+         VALUES (:telegram_id, :email, :display_name, :username, 1, :role)'
     );
     try {
         $insert->execute(array(
@@ -448,6 +467,7 @@ function admin_find_or_bootstrap_user($pdo, array $telegramUser)
             ':email' => $config['email'],
             ':display_name' => $displayName !== '' ? $displayName : null,
             ':username' => $telegramUser['username'] !== '' ? $telegramUser['username'] : null,
+            ':role' => 'super',
         ));
     } catch (PDOException $error) {
         // Another callback may have created the same allowlisted admin.
@@ -457,7 +477,38 @@ function admin_find_or_bootstrap_user($pdo, array $telegramUser)
     }
 
     $statement->execute(array(':telegram_id' => $telegramUser['id']));
-    return $statement->fetch();
+    $row = $statement->fetch();
+
+    return $row ? admin_promote_bootstrap_super($pdo, $row, $config) : $row;
+}
+
+// Safety net for databases migrated from before the role column existed: when
+// no active super admin remains, the configured bootstrap ID is promoted on
+// its next successful login so the panel cannot lock itself out.
+function admin_promote_bootstrap_super($pdo, $row, $config)
+{
+    if (!is_array($row) || !isset($row['role'])) {
+        return $row;
+    }
+    if ((string) $row['role'] === 'super'
+        || (string) $row['telegram_id'] !== (string) $config['telegram_id']) {
+        return $row;
+    }
+
+    try {
+        $superCount = (int) $pdo->query(
+            "SELECT COUNT(*) FROM admin_users WHERE is_active = 1 AND role = 'super'"
+        )->fetchColumn();
+        if ($superCount === 0) {
+            $promote = $pdo->prepare("UPDATE admin_users SET role = 'super' WHERE id = :id");
+            $promote->execute(array(':id' => (int) $row['id']));
+            $row['role'] = 'super';
+        }
+    } catch (Exception $error) {
+        error_log('admin bootstrap promote failed: ' . $error->getMessage());
+    }
+
+    return $row;
 }
 
 function admin_create_challenge($pdo, array $admin, $ipHash)
@@ -784,6 +835,7 @@ function admin_handle_session($pdo)
             'email' => $session['row']['email'],
             'display_name' => $session['row']['display_name'],
             'telegram_username' => $session['row']['telegram_username'],
+            'role' => $session['row']['role'],
             'last_login_at' => $session['row']['last_login_at'],
         ),
         'csrf_token' => admin_csrf_token($session['token']),
@@ -1457,6 +1509,10 @@ function admin_validate_admin($input)
         $errors['display_name'] = 'Display name is too long.';
     }
     $isActive = !empty($input['is_active']) && (string) $input['is_active'] !== '0';
+    $role = admin_text(isset($input['role']) ? $input['role'] : 'admin', 20, false);
+    if ($role === null || !in_array($role, array('super', 'admin'), true)) {
+        $errors['role'] = 'Role super yoki admin bo‘lishi kerak.';
+    }
 
     if ($errors) {
         return array(null, $errors);
@@ -1466,6 +1522,7 @@ function admin_validate_admin($input)
         'email' => $email,
         'display_name' => $displayName === '' ? null : $displayName,
         'is_active' => $isActive ? 1 : 0,
+        'role' => $role,
     ), array());
 }
 
@@ -1480,9 +1537,10 @@ function admin_handle_admins($pdo)
 {
     $method = admin_require_method(array('GET', 'POST'));
     $session = admin_require_session($pdo);
+    admin_require_super($session);
     if ($method === 'GET') {
         $statement = $pdo->query(
-            'SELECT id, telegram_id, email, display_name, telegram_username, is_active, last_login_at, created_at
+            'SELECT id, telegram_id, email, display_name, telegram_username, is_active, role, last_login_at, created_at
              FROM admin_users ORDER BY id ASC'
         );
         $items = array();
@@ -1504,18 +1562,22 @@ function admin_handle_admins($pdo)
 
     try {
         $statement = $pdo->prepare(
-            'INSERT INTO admin_users (telegram_id, email, display_name, is_active)
-             VALUES (:telegram_id, :email, :display_name, :is_active)'
+            'INSERT INTO admin_users (telegram_id, email, display_name, is_active, role)
+             VALUES (:telegram_id, :email, :display_name, :is_active, :role)'
         );
         $statement->execute(array(
             ':telegram_id' => $admin['telegram_id'],
             ':email' => $admin['email'],
             ':display_name' => $admin['display_name'],
             ':is_active' => $admin['is_active'],
+            ':role' => $admin['role'],
         ));
         $id = (int) $pdo->lastInsertId();
-        admin_audit($pdo, $session['row']['admin_id'], 'admin_created', 'admin_user', $id, array('telegram_id' => $admin['telegram_id']));
-        $row = $pdo->prepare('SELECT id, telegram_id, email, display_name, telegram_username, is_active, last_login_at, created_at FROM admin_users WHERE id = :id');
+        admin_audit($pdo, $session['row']['admin_id'], 'admin_created', 'admin_user', $id, array(
+            'telegram_id' => $admin['telegram_id'],
+            'role' => $admin['role'],
+        ));
+        $row = $pdo->prepare('SELECT id, telegram_id, email, display_name, telegram_username, is_active, role, last_login_at, created_at FROM admin_users WHERE id = :id');
         $row->execute(array(':id' => $id));
         admin_respond(admin_admin_data($row->fetch()), 201);
     } catch (PDOException $error) {
@@ -1534,7 +1596,8 @@ function admin_handle_admin_item($pdo, $id)
 {
     $method = admin_require_method(array('GET', 'PUT', 'DELETE'));
     $session = admin_require_session($pdo);
-    $statement = $pdo->prepare('SELECT id, telegram_id, email, display_name, telegram_username, is_active, last_login_at, created_at FROM admin_users WHERE id = :id LIMIT 1');
+    admin_require_super($session);
+    $statement = $pdo->prepare('SELECT id, telegram_id, email, display_name, telegram_username, is_active, role, last_login_at, created_at FROM admin_users WHERE id = :id LIMIT 1');
     $statement->execute(array(':id' => (int) $id));
     $row = $statement->fetch();
     if (!$row) {
@@ -1554,9 +1617,15 @@ function admin_handle_admin_item($pdo, $id)
         if ($current['is_active'] && admin_active_count($pdo, $id) === 0) {
             admin_fail('At least one active admin is required', 'last_admin', 422);
         }
+        if ($current['role'] === 'super' && !admin_has_other_active_super($pdo, $id)) {
+            admin_fail('At least one active super admin is required', 'last_super_admin', 422);
+        }
         $delete = $pdo->prepare('DELETE FROM admin_users WHERE id = :id');
         $delete->execute(array(':id' => (int) $id));
-        admin_audit($pdo, $session['row']['admin_id'], 'admin_deleted', 'admin_user', $id, array('telegram_id' => $current['telegram_id']));
+        admin_audit($pdo, $session['row']['admin_id'], 'admin_deleted', 'admin_user', $id, array(
+            'telegram_id' => $current['telegram_id'],
+            'role' => $current['role'],
+        ));
         admin_respond(array('deleted' => true, 'id' => (int) $id), 200);
     }
 
@@ -1574,20 +1643,30 @@ function admin_handle_admin_item($pdo, $id)
     if (!$admin['is_active'] && $current['is_active'] && admin_active_count($pdo, $id) === 0) {
         admin_fail('At least one active admin is required', 'last_admin', 422);
     }
+    if ($current['role'] === 'super'
+        && (!$admin['is_active'] || $admin['role'] !== 'super')
+        && !admin_has_other_active_super($pdo, $id)) {
+        admin_fail('At least one active super admin is required', 'last_super_admin', 422);
+    }
 
     try {
         $update = $pdo->prepare(
-            'UPDATE admin_users SET telegram_id = :telegram_id, email = :email, display_name = :display_name, is_active = :is_active WHERE id = :id'
+            'UPDATE admin_users SET telegram_id = :telegram_id, email = :email, display_name = :display_name, is_active = :is_active, role = :role WHERE id = :id'
         );
         $update->execute(array(
             ':telegram_id' => $admin['telegram_id'],
             ':email' => $admin['email'],
             ':display_name' => $admin['display_name'],
             ':is_active' => $admin['is_active'],
+            ':role' => $admin['role'],
             ':id' => (int) $id,
         ));
-        admin_audit($pdo, $session['row']['admin_id'], 'admin_updated', 'admin_user', $id, array('telegram_id' => $admin['telegram_id'], 'is_active' => $admin['is_active']));
-        $fresh = $pdo->prepare('SELECT id, telegram_id, email, display_name, telegram_username, is_active, last_login_at, created_at FROM admin_users WHERE id = :id');
+        admin_audit($pdo, $session['row']['admin_id'], 'admin_updated', 'admin_user', $id, array(
+            'telegram_id' => $admin['telegram_id'],
+            'is_active' => $admin['is_active'],
+            'role' => $admin['role'],
+        ));
+        $fresh = $pdo->prepare('SELECT id, telegram_id, email, display_name, telegram_username, is_active, role, last_login_at, created_at FROM admin_users WHERE id = :id');
         $fresh->execute(array(':id' => (int) $id));
         admin_respond(admin_admin_data($fresh->fetch()), 200);
     } catch (PDOException $error) {

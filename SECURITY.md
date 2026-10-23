@@ -6,13 +6,16 @@ Bu hujjat `otaboyev-sardorbek.uz` saytining admin autentifikatsiyasi, PHP API, c
 
 1. Admin Telegram Login Widget orqali tasdiqlanadi.
 2. PHP Telegram `hash` ni bot token bilan HMAC-SHA256 orqali tekshiradi va `auth_date` 5 daqiqadan oshmaganini nazorat qiladi.
-3. Faqat `ADMIN_TELEGRAM_ID` (bootstrap) yoki `admin_users` jadvalidagi faol admin ruxsat etiladi.
-4. Admin emailiga 6 xonali bir martalik kod yuboriladi. Kod 10 daqiqa amal qiladi, 5 urinishdan keyin bekor qilinadi.
-5. Kod tasdiqlangach HttpOnly session cookie o‘rnatiladi. Barcha o‘zgartirish so‘rovlari `X-CSRF-Token` talab qiladi.
+3. Faqat `admin_users` jadvalidagi faol admin ruxsat etiladi (bo‘sh jadvalda `ADMIN_TELEGRAM_ID` bootstrap).
+4. Rollar: `super` — adminlarni boshqaradi (`/api.php/admin/admins*`), `admin` — faqat profil, loyiha va inbox. Oxirgi faol super adminni o‘chirish/deaktiv qilish yoki rolini pasaytirish `422 last_super_admin` bilan bloklanadi.
+5. Admin emailiga 6 xonali bir martalik kod yuboriladi. Kod 10 daqiqa amal qiladi, 5 urinishdan keyin bekor qilinadi.
+6. Kod tasdiqlangach HttpOnly session cookie o‘rnatiladi. Barcha o‘zgartirish so‘rovlari `X-CSRF-Token` talab qiladi.
 
 Admin panel manzillari: `/admin/`, `/admin/verify/`, `/admin/dashboard/`.
 
 Bot bridge alohida: `POST /api.php/bot/webhook` Telegram `X-Telegram-Bot-Api-Secret-Token` va `admin_users.is_active=1` ruxsatini tekshiradi; faqat `message` update’lari. `/send` va `/reply` emailni cPanel `mail()` bilan yuboradi, `/inbox` va `/read` esa IMAP orqali `admin@` qutisini o‘qiydi, `/messages` va `/message` web inbox’ni ko‘rsatadi. Bot OTP, bot token, app secret yoki mailbox parolini Telegram’ga chiqarmaydi.
+
+RBAC: `super` va `admin` rollari `admin_users.role` da saqlanadi; `admin_require_super($session)` mutatsiyalardan oldin chaqiriladi, `admin_has_other_active_super()` esa oxirgi faol super adminni himoya qiladi. Rol o‘zgarishi darhol kuchga kiradi, chunki har bir so‘rovda session `admin_users` ga JOIN qilinadi.
 
 ## Top 20 himoya nazorati
 
@@ -26,7 +29,7 @@ Bot bridge alohida: `POST /api.php/bot/webhook` Telegram `X-Telegram-Bot-Api-Sec
 | 6 | Brute force | 6 xonali kod, 5 urinish, 10 daqiqa TTL; 15 daqiqada 3 ta kod va 5 ta Telegram start limiti. |
 | 7 | OTP replay | Kod hash HMAC bilan saqlanadi; challenge `consumed_at` bilan bir martalik; yangi kod eskisini bekor qiladi. |
 | 8 | Telegram soxta callback | Bot token asosidagi HMAC tekshiruvi; `hash_equals`; `auth_date` oynasi; faqat raqamli Telegram ID. |
-| 9 | Ruxsatsiz admin | `admin_users.is_active` + Telegram allowlist; begona Telegram akkaunt `unauthorized` ga yo‘naltiriladi. |
+| 9 | Ruxsatsiz admin | `admin_users.is_active` + Telegram allowlist; begona Telegram akkaunt `unauthorized` ga yo‘naltiriladi. `super`/`admin` rollari admin-user CRUD’ini cheklaydi. |
 | 10 | IDOR | Har bir admin endpoint session talab qiladi; project ID faqat autentifikatsiyadan keyin ishlatiladi. |
 | 11 | CORS suiiste’moli | Admin, bot, form va token endpointlarga `Access-Control-Allow-Origin` berilmaydi; wildcard `*` faqat public read-only JSON endpointlarda (`profile`, `projects`, `health`, `status`); cookie ishlatilmaydi. |
 | 12 | Clickjacking | `.htaccess`: `X-Frame-Options: DENY` va CSP `frame-ancestors 'none'`. |
@@ -78,7 +81,7 @@ Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `api.php` `display_errors=0` va `log
    - Email Deliverability bo‘limida SPF, DKIM, DMARC holatini tekshiring. Hozirgi serverda SPF `pass`, DKIM `none`, DMARC `p=none`; DKIM signing uchun root/WHM yoki provider amali kerak.
    - `ADMIN_MAIL_DRIVER=mail` (cPanel local) yoki `smtp`/`resend`/`brevo` tanlang.
 4. **App secret**: `php -r "echo bin2hex(random_bytes(32));"` bilan 64 belgili hex yarating.
-5. **MySQL**: yangi baza uchun `schema.sql` va `seed.sql` import qiling; mavjud bazada avval `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql` va `database/migrate-bot-guards.sql` ni qo‘llang. `seed.sql` mavjud admin tahrirlarini bosib ketishini unutmang. Importdan keyin DB user’ga faqat `SELECT, INSERT, UPDATE, DELETE` bering; migratsiya uchun `CREATE`/`ALTER`/`DROP` ni vaqtincha qo‘shing.
+5. **MySQL**: yangi baza uchun `schema.sql` va `seed.sql` import qiling; mavjud bazada avval `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql` va `database/migrate-admin-role.sql` ni qo‘llang. `seed.sql` mavjud admin tahrirlarini bosib ketishini unutmang. Importdan keyin DB user’ga faqat `SELECT, INSERT, UPDATE, DELETE` bering; migratsiya uchun `CREATE`/`ALTER`/`DROP` ni vaqtincha qo‘shing.
 6. **Config**: `config.local.example.php` dan `config.local.php` yarating, lekin uni git’ga qo‘shmang. `/websites` endpointidan foydalansangiz, hosting environment’ida `API_TOKEN` ni ham o‘rnating.
 7. **Deploy**: `out/` tarkibini web rootga ko‘chiring; `backend/`, `config.local.php`, `.htaccess` joyida bo‘lsin; `github_keys.txt` web rootga ko‘chirilmasin.
 8. **Tekshirish**: `/admin/` ni HTTPS’da oching, Telegram widget’ni bosing, email kodni kiriting, profile va project saqlang.
@@ -96,6 +99,7 @@ Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `api.php` `display_errors=0` va `log
 - [x] `admin@` va `no-reply@` mailbox’lari, `contact@` forwarder’i; SPF `pass`.
 - [ ] DKIM external DNS’da va Exim’da imzolash; DMARC `p=none` (provider/WHM amali kerak).
 - [x] MySQL `admin_users` jadvalida faqat kerakli admin bor; DB user least-privilege.
+- [x] `admin_users.role` (`super`/`admin`) va `super`-only admin CRUD; oxirgi faol super admin guard (`422 last_super_admin`).
 - [x] HTTPS majburiy; HSTS, CSP, `X-Frame-Options: DENY` va boshqa headerlar javobda ko‘rinadi.
 - [x] `out/` build’ida `config.local.php` **yo‘q**; web rootga qo‘lda `600` bilan qo‘yiladi.
 - [x] `api.php` `display_errors=0`, `log_errors` yoqilgan.
@@ -193,7 +197,7 @@ OK
 | 6 | Brute force | `ADMIN_RATE_MAX_CHALLENGES=3`, `ADMIN_RATE_MAX_STARTS=5`, `ADMIN_RATE_WINDOW_MINUTES=15` | `backend/admin.php` |
 | 7 | OTP replay | `consumed_at` bilan bir martalik; `attempts` bilan 5 limit | `backend/admin.php:admin_handle_verify()` |
 | 8 | Telegram soxta callback | `hash_equals()` + `auth_date` oynasi | `backend/admin.php:admin_telegram_validate()` |
-| 9 | Ruxsatsiz admin | `admin_users.is_active=1` + `telegram_id` allowlist | `backend/admin.php:admin_find_or_bootstrap_user()` |
+| 9 | Ruxsatsiz admin | `admin_users.is_active=1` + `telegram_id` allowlist; `admin` roli `/admins` da `403 forbidden` oladi, `super` talab qilinadi | `backend/admin.php:admin_find_or_bootstrap_user()`, `admin_require_super()` |
 | 10 | IDOR | Har bir `admin_*_item()` funksiyasi `admin_require_session()` chaqiradi | `backend/admin.php` |
 | 11 | CORS | Admin va bot endpoint’larida ACAO **yo‘q** | `api.php` |
 | 12 | Clickjacking | `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'` | `api.php` + `.htaccess` |
@@ -252,7 +256,8 @@ otaboyev-sardorbek.uz/
 │   ├── seed.sql                   644
 │   ├── migrate-project-sections.sql  644
 │   ├── migrate-contact-messages.sql  644
-│   └── migrate-bot-guards.sql      644  # idempotent
+│   ├── migrate-bot-guards.sql      644  # idempotent
+│   └── migrate-admin-role.sql      644  # idempotent
 │
 ├── github_keys.txt                600  🚨 Revoke qiling, keyin o‘chiring
 ├── config.local.php               600  (web rootga qo‘lda; build’ga kirmaydi)
@@ -339,6 +344,7 @@ Bu **API javoblari uchun to‘g‘ri**. Ammo HTML sahifalarda bu CSP sizning `.h
 | `display_name` | VARCHAR(120) NULL | |
 | `telegram_username` | VARCHAR(64) NULL | |
 | `is_active` | TINYINT(1) DEFAULT 1 | |
+| `role` | VARCHAR(20) DEFAULT 'admin' | `super` yoki `admin`; `super` adminlarni boshqaradi |
 | `last_login_at` | DATETIME NULL | |
 | `created_at` / `updated_at` | DATETIME | |
 

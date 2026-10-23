@@ -70,7 +70,7 @@ do_migrate() {
   [ -n "$port" ] && args=(-P "$port" "${args[@]}")
   [ -n "$socket" ] && args=(-S "$socket" "${args[@]}")
 
-  for file in database/migrate-project-sections.sql database/migrate-contact-messages.sql database/migrate-bot-guards.sql; do
+  for file in database/migrate-project-sections.sql database/migrate-contact-messages.sql database/migrate-bot-guards.sql database/migrate-admin-role.sql; do
     [ -f "$APP_DIR/$file" ] || { log "skip $file (absent)"; continue; }
     if [ "$file" = "database/migrate-project-sections.sql" ]; then
       log "NOTE: $file is not idempotent; import only if columns are missing"
@@ -81,6 +81,9 @@ do_migrate() {
 
   log "verifying guard tables"
   mysql "${args[@]}" -N -e "SHOW TABLES LIKE 'bot_updates_seen'; SHOW TABLES LIKE 'bot_rate_limit';"
+
+  log "verifying admin role column"
+  mysql "${args[@]}" -N -e "SHOW COLUMNS FROM admin_users LIKE 'role';"
   unset MYSQL_PWD
 }
 

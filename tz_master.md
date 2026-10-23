@@ -45,10 +45,10 @@ The repository has one Next.js frontend layer, one PHP content/admin backend and
 - `backend/config.php` — DB, admin and mail settings from env or gitignored `config.local.php`.
 - `backend/contact.php` — contact validation, IP hash, rate limit, inbox persistence and native `id=contact` handler.
 - `backend/content.php` — public JSON content API.
-- `backend/admin.php` — Telegram + email OTP auth, sessions, CSRF, rate limits, audit log, profile/project CRUD, inbox, sitemap and admin-user management.
+- `backend/admin.php` — Telegram + email OTP auth, sessions, CSRF, rate limits, audit log, profile/project CRUD, inbox, sitemap, admin-user management and `super`/`admin` role guards (`403 forbidden`, `422 last_super_admin`).
 - `backend/bot.php` — private Telegram email bridge: webhook secret plus `admin_users.is_active` authorization (empty table falls back to `admin.telegram_id`), IMAP inbox/read, contact inbox commands, cPanel `mail()` send with `/reply`; `update_id` idempotency, per-admin command rate limits and audit rows; only `/api.php/bot/webhook`.
 - `backend/mailer.php` — `mail`, SMTP, Resend, Brevo and local `log` drivers.
-- `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql`.
+- `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql`, `database/migrate-admin-role.sql`.
 
 ### Legacy / Sitejet files
 
@@ -88,9 +88,10 @@ Existing database (before the project-sections and contact-inbox migrations):
 mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
 mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
 mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
+mysql -u USER -p DB_NAME < database/migrate-admin-role.sql
 ```
 
-`migrate-project-sections.sql` adds `results` and `stack_notes`; it is a one-time, non-idempotent script. `migrate-contact-messages.sql` and `migrate-bot-guards.sql` use `CREATE TABLE IF NOT EXISTS` and are safe to run again. Re-import `database/seed.sql` **only** when resetting to the default content — it overwrites existing admin edits.
+`migrate-project-sections.sql` adds `results` and `stack_notes`; it is a one-time, non-idempotent script. `migrate-contact-messages.sql`, `migrate-bot-guards.sql` and `migrate-admin-role.sql` are idempotent and safe to run again; the role migration adds `admin_users.role` (`super`/`admin`), its index and a one-time safety promotion of the earliest active admin when no active super admin exists. Re-import `database/seed.sql` **only** when resetting to the default content — it overwrites existing admin edits.
 
 ## 4. API contract
 
@@ -143,7 +144,7 @@ Errors: `404 project_not_found`, `503 db_unavailable`, `405 method_not_allowed`,
 
 ## 5. Admin security
 
-- Telegram Login Widget callback: HMAC-SHA256 with the bot token, `auth_date` window, allowed `ADMIN_TELEGRAM_ID` or active `admin_users` row.
+- Telegram Login Widget callback: HMAC-SHA256 with the bot token, `auth_date` window, allowed `ADMIN_TELEGRAM_ID` or active `admin_users` row. `admin_users.role` separates `super` (admin management) from `admin` (content + inbox); `/api.php/admin/admins*` requires `super` and the last active super admin cannot be removed, deactivated or demoted.
 - OTP: 6 digits, HMAC-hashed, one-time, 10 minutes, 5 attempts.
 - Cookies: `admin_session` HttpOnly, Secure on HTTPS, `SameSite=Strict`; `admin_challenge` HttpOnly, `SameSite=Lax`.
 - CSRF: HMAC token bound to the session; required on POST/PUT/DELETE. `Origin`/`Referer` must match `site_url` by scheme, host and port; `Origin: null` is rejected; if both headers are absent (CLI), `X-Requested-With: XMLHttpRequest` is required.

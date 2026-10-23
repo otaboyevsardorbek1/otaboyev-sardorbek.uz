@@ -67,6 +67,8 @@ export function errorMessage(error) {
   if (error.code === 'cannot_delete_self') return 'O‘z admin hisobingizni o‘chira olmaysiz.';
   if (error.code === 'cannot_deactivate_self') return 'O‘z admin hisobingizni deaktiv qila olmaysiz.';
   if (error.code === 'last_admin') return 'Kamida bitta faol admin qolishi kerak.';
+  if (error.code === 'last_super_admin') return 'Kamida bitta faol super admin qolishi kerak.';
+  if (error.code === 'forbidden') return 'Bu amal uchun super admin huquqi kerak.';
   if (error.code === 'admin_exists') return 'Bu Telegram ID allaqachon admin.';
   if (error.code === 'message_not_found') return 'Xabar topilmadi.';
   return error.message || 'Xatolik yuz berdi.';

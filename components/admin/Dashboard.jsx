@@ -18,6 +18,7 @@ export default function AdminDashboard() {
   const [tab, setTab] = useState('profile');
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
+  const isSuper = admin && admin.role === 'super';
 
   useEffect(() => {
     let active = true;
@@ -60,6 +61,12 @@ export default function AdminDashboard() {
     const timer = window.setTimeout(() => setToast(''), 3500);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (tab === 'admins' && !isSuper) {
+      setTab('profile');
+    }
+  }, [tab, isSuper]);
 
   async function refreshProjects() {
     const data = await adminApi('/projects');
@@ -116,9 +123,11 @@ export default function AdminDashboard() {
             <span>03</span> Xabarlar
             {unread > 0 && <em className="admin-nav-badge">{unread}</em>}
           </button>
-          <button className={tab === 'admins' ? 'active' : ''} type="button" onClick={() => setTab('admins')}>
-            <span>04</span> Adminlar
-          </button>
+          {isSuper && (
+            <button className={tab === 'admins' ? 'active' : ''} type="button" onClick={() => setTab('admins')}>
+              <span>04</span> Adminlar
+            </button>
+          )}
         </nav>
 
         <div className="admin-sidebar-footer">
@@ -170,7 +179,7 @@ export default function AdminDashboard() {
           <MessageInbox notify={setToast} onUnreadChange={setUnread} />
         )}
 
-        {tab === 'admins' && (
+        {tab === 'admins' && isSuper && (
           <AdminManager currentAdminId={admin.id} notify={setToast} />
         )}
       </main>

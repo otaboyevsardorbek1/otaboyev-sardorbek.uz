@@ -92,12 +92,14 @@ CREATE TABLE IF NOT EXISTS admin_users (
   display_name VARCHAR(120) DEFAULT NULL,
   telegram_username VARCHAR(64) DEFAULT NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
+  role VARCHAR(20) NOT NULL DEFAULT 'admin',
   last_login_at DATETIME DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uniq_admin_users_telegram (telegram_id),
-  KEY idx_admin_users_active (is_active)
+  KEY idx_admin_users_active (is_active),
+  KEY idx_admin_users_role (role)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS admin_login_challenges (

@@ -3,12 +3,18 @@
 import { useEffect, useState } from 'react';
 import { adminApi, errorMessage } from './api';
 
+const ROLES = [
+  { id: 'super', label: 'Super admin', hint: 'Adminlarni boshqara oladi' },
+  { id: 'admin', label: 'Admin', hint: 'Faqat kontent va inbox' },
+];
+
 function AdminEditor({ admin, onCancel, onSaved }) {
   const [form, setForm] = useState(() => ({
     telegram_id: admin ? String(admin.telegram_id || '') : '',
     email: admin ? admin.email || '' : '',
     display_name: admin ? admin.display_name || '' : '',
     is_active: admin ? Boolean(admin.is_active) : true,
+    role: admin ? admin.role || 'admin' : 'admin',
   }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -38,12 +44,14 @@ function AdminEditor({ admin, onCancel, onSaved }) {
     }
   }
 
+  const selectedRole = ROLES.find((role) => role.id === form.role);
+
   return (
     <form className="admin-panel" onSubmit={submit}>
       <div className="admin-panel-head">
         <div>
           <h2>{isNew ? 'Yangi admin' : `Tahrirlash: ${admin.telegram_id}`}</h2>
-          <p>Telegram ID va OTP email manzilini kiriting. Admin Telegram orqali kirganda shu emailga kod yuboriladi.</p>
+          <p>Telegram ID, OTP email manzili va rolni kiriting. Admin Telegram orqali kirganda shu emailga kod yuboriladi.</p>
         </div>
         <button className="admin-btn admin-btn-ghost" type="button" onClick={onCancel}>Bekor qilish</button>
       </div>
@@ -81,10 +89,24 @@ function AdminEditor({ admin, onCancel, onSaved }) {
             placeholder="Sardorbek"
           />
         </label>
+        <label>
+          <span>Rol</span>
+          <select value={form.role} onChange={(event) => setField('role', event.target.value)} required>
+            {ROLES.map((role) => (
+              <option key={role.id} value={role.id}>{role.label}</option>
+            ))}
+          </select>
+          <small className="admin-form-note">{selectedRole ? selectedRole.hint : ''}</small>
+        </label>
         <label className="admin-checkbox">
           <input type="checkbox" checked={form.is_active} onChange={(event) => setField('is_active', event.target.checked)} />
-          <span>Faol</span>
+          <span>Faol (bot + panel)</span>
         </label>
+      </div>
+
+      <div className="admin-form-note">
+        <strong>Diqqat:</strong> faolsizlantirilsa admin web panelga ham, botga ham kira olmaydi.
+        Kamida bitta faol super admin qolishi shart.
       </div>
 
       {error && <div className="admin-alert admin-alert-error">{error}</div>}
@@ -140,7 +162,8 @@ export default function AdminManager({ currentAdminId, notify }) {
 
   async function remove(admin) {
     if (busy) return;
-    if (!window.confirm(`${admin.telegram_id} adminini o‘chirasizmi? Bu amalni qaytarib bo‘lmaydi.`)) return;
+    if (Number(admin.id) === Number(currentAdminId)) return;
+    if (!window.confirm(`${admin.telegram_id} adminini o‘chirasizmi? Bu amalni qaytarib bo‘lmaydi va bot ham ishlamaydi.`)) return;
     setBusy(admin.id);
     setError('');
     try {
@@ -169,12 +192,17 @@ export default function AdminManager({ currentAdminId, notify }) {
     );
   }
 
+  const activeSupers = admins.filter((row) => row.role === 'super' && row.is_active).length;
+
   return (
     <section className="admin-panel">
       <div className="admin-panel-head">
         <div>
           <h2>Adminlar</h2>
-          <p>{admins.length} ta admin. Faqat faol adminlar Telegram + OTP orqali kira oladi.</p>
+          <p>
+            {admins.length} ta admin, {activeSupers} ta faol super.
+            Faqat faol adminlar Telegram + OTP orqali kira oladi; bot ham shu ro‘yxatga bo‘ysunadi.
+          </p>
         </div>
         <button className="admin-btn admin-btn-primary" type="button" onClick={() => setEditing('new')}>+ Yangi admin</button>
       </div>
@@ -193,36 +221,47 @@ export default function AdminManager({ currentAdminId, notify }) {
                 <th>Telegram ID</th>
                 <th>Email</th>
                 <th>Ism</th>
+                <th>Rol</th>
                 <th>Holat</th>
                 <th>Oxirgi kirish</th>
                 <th aria-label="Amallar" />
               </tr>
             </thead>
             <tbody>
-              {admins.map((admin) => (
-                <tr key={admin.id}>
-                  <td><code>{admin.telegram_id}</code></td>
-                  <td>{admin.email}</td>
-                  <td>{admin.display_name || '—'}</td>
-                  <td>
-                    <span className={`admin-state ${admin.is_active ? 'on' : 'off'}`}>
-                      {admin.is_active ? 'Faol' : 'O‘chirilgan'}
-                    </span>
-                  </td>
-                  <td>{admin.last_login_at || '—'}</td>
-                  <td className="admin-row-actions">
-                    <button className="admin-btn admin-btn-small" type="button" onClick={() => setEditing(admin)}>Tahrirlash</button>
-                    <button
-                      className="admin-btn admin-btn-small admin-btn-danger"
-                      type="button"
-                      disabled={busy === admin.id || Number(admin.id) === Number(currentAdminId)}
-                      onClick={() => remove(admin)}
-                    >
-                      {busy === admin.id ? '...' : 'O‘chirish'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {admins.map((admin) => {
+                const isSelf = Number(admin.id) === Number(currentAdminId);
+                const isLastSuper = admin.role === 'super' && admin.is_active && activeSupers <= 1;
+                return (
+                  <tr key={admin.id}>
+                    <td><code>{admin.telegram_id}</code></td>
+                    <td>{admin.email}</td>
+                    <td>{admin.display_name || '—'}</td>
+                    <td>
+                      <span className={`admin-state ${admin.role === 'super' ? 'on' : ''}`}>
+                        {admin.role === 'super' ? 'Super' : 'Admin'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`admin-state ${admin.is_active ? 'on' : 'off'}`}>
+                        {admin.is_active ? 'Faol' : 'O‘chirilgan'}
+                      </span>
+                    </td>
+                    <td>{admin.last_login_at || '—'}</td>
+                    <td className="admin-row-actions">
+                      <button className="admin-btn admin-btn-small" type="button" onClick={() => setEditing(admin)}>Tahrirlash</button>
+                      <button
+                        className="admin-btn admin-btn-small admin-btn-danger"
+                        type="button"
+                        disabled={busy === admin.id || isSelf || isLastSuper}
+                        title={isSelf ? 'O‘zingizni o‘chira olmaysiz' : isLastSuper ? 'Oxirgi faol super admin' : ''}
+                        onClick={() => remove(admin)}
+                      >
+                        {busy === admin.id ? '...' : 'O‘chirish'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
