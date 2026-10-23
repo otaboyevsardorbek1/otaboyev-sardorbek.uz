@@ -202,15 +202,16 @@ APP_DIR="$APP_DIR"
 SITE_URL="$SITE_URL"
 LOG_DIR="$LOG_DIR"
 STATE="$HOME/.config/otaboyev-ops/monitor.state"
+BOT_STATE="$HOME/.config/otaboyev-ops/bot.state"
 mkdir -p "\$LOG_DIR"
 
+TOKEN=\$(php -r '\$c = require \$argv[1]; echo \$c["admin"]["telegram_bot_token"] ?? "";' "\$APP_DIR/config.local.php")
+CHAT=\$(php -r '\$c = require \$argv[1]; echo \$c["admin"]["telegram_id"] ?? "";' "\$APP_DIR/config.local.php")
+
 notify() {
-  local token chat
-  token=\$(php -r '\$c = require \$argv[1]; echo \$c["admin"]["telegram_bot_token"] ?? "";' "\$APP_DIR/config.local.php")
-  chat=\$(php -r '\$c = require \$argv[1]; echo \$c["admin"]["telegram_id"] ?? "";' "\$APP_DIR/config.local.php")
-  [ -n "\$token" ] && [ -n "\$chat" ] || return 0
-  curl -fsS --max-time 10 "https://api.telegram.org/bot\$token/sendMessage" \
-    --data-urlencode "chat_id=\$chat" --data-urlencode "text=\$1" >/dev/null 2>&1 || true
+  [ -n "\$TOKEN" ] && [ -n "\$CHAT" ] || return 0
+  curl -fsS --max-time 10 "https://api.telegram.org/bot\$TOKEN/sendMessage" \
+    --data-urlencode "chat_id=\$CHAT" --data-urlencode "text=\$1" >/dev/null 2>&1 || true
 }
 
 code=\$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "\$SITE_URL/api.php/health" || echo 000)
@@ -223,6 +224,31 @@ else
   fi
   echo "\$(date -Is) health=\$code" >> "\$LOG_DIR/monitor.log"
   exit 1
+fi
+
+# Bot bridge: config presence + Telegram webhook backlog.
+bot=\$(curl -sS --max-time 15 "\$SITE_URL/api.php/bot/health" 2>/dev/null || echo '')
+case "\$bot" in
+  *'"configured":true'*)
+    if [ -f "\$BOT_STATE" ]; then rm -f "\$BOT_STATE"; notify "✅ Telegram bot yana ishlayapti"; fi ;;
+  *)
+    if [ ! -f "\$BOT_STATE" ]; then
+      date -Is > "\$BOT_STATE"
+      notify "🚨 Telegram bot sozlanmagan yoki health javob bermayapti (\$SITE_URL/api.php/bot/health)"
+    fi
+    echo "\$(date -Is) bot_health=unconfigured" >> "\$LOG_DIR/monitor.log" ;;
+esac
+
+if [ -n "\$TOKEN" ]; then
+  info=\$(curl -sS --max-time 15 "https://api.telegram.org/bot\$TOKEN/getWebhookInfo" 2>/dev/null || echo '')
+  pending=\$(printf '%s' "\$info" | php -r '\$d = json_decode(stream_get_contents(STDIN), true); echo isset(\$d["result"]["pending_update_count"]) ? (int) \$d["result"]["pending_update_count"] : -1;')
+  if [ "\$pending" -lt 0 ]; then
+    notify "🚨 getWebhookInfo javob bermadi (\$(hostname))"
+    echo "\$(date -Is) webhook_info=failed" >> "\$LOG_DIR/monitor.log"
+  elif [ "\$pending" -gt 5 ]; then
+    notify "🚨 bot pending_update_count=\$pending (\$(hostname))"
+    echo "\$(date -Is) pending_update_count=\$pending" >> "\$LOG_DIR/monitor.log"
+  fi
 fi
 EOF
   chmod 700 "$monitor_script"
@@ -308,6 +334,7 @@ do_verify() {
 
   log "live checks against $SITE_URL"
   check "health" 200 "$SITE_URL/api.php/health"
+  check "bot health" 200 "$SITE_URL/api.php/bot/health"
   check "uz home" 200 "$SITE_URL/uz/"
   check "en home" 200 "$SITE_URL/en/"
   check "ru home" 200 "$SITE_URL/ru/"
@@ -329,6 +356,13 @@ do_verify() {
   case "$cfg" in
     *'"enabled":true'*) printf '  ok   %-28s enabled\n' "admin auth" ;;
     *) printf '  FAIL %-28s not enabled\n' "admin auth"; failures=$((failures + 1)) ;;
+  esac
+
+  local bot
+  bot="$(curl -s --max-time 15 "$SITE_URL/api.php/bot/health" || true)"
+  case "$bot" in
+    *'"configured":true'*) printf '  ok   %-28s configured\n' "telegram bot" ;;
+    *) printf '  FAIL %-28s not configured\n' "telegram bot"; failures=$((failures + 1)) ;;
   esac
 
   [ "$failures" -eq 0 ] && log "all checks passed" || die "$failures check(s) failed"

@@ -67,12 +67,93 @@ function bot_clean_body($value, $max)
 
 function bot_db()
 {
+    static $alerted = false;
     try {
         return content_db();
     } catch (Exception $error) {
         error_log('bot database unavailable: ' . $error->getMessage());
+        if (!$alerted) {
+            $alerted = true;
+            bot_alert_admin('Bot DB unavailable: ' . $error->getMessage());
+        }
         return null;
     }
+}
+
+// Best-effort alert to the configured owner. Used by the health endpoint and
+// when the bot loses the database. It never throws: a failed Telegram call is
+// written to the PHP error log instead. bot_alert_admin() is safe to call
+// before bot_config() is fully initialized because bot_config() is lazy.
+function bot_alert_admin($message)
+{
+    static $sent = array();
+
+    $text = bot_clean_body($message, 3500);
+    if ($text === '') {
+        return false;
+    }
+    if (array_key_exists($text, $sent)) {
+        return $sent[$text];
+    }
+
+    $config = bot_config();
+    $ok = false;
+    if ($config['token'] !== '' && $config['admin_id'] !== '') {
+        $ok = bot_api('sendMessage', array(
+            'chat_id' => $config['admin_id'],
+            'text' => '⚠️ ' . $text,
+            'disable_web_page_preview' => true,
+        ));
+    }
+    if (!$ok) {
+        error_log('bot alert: ' . $text);
+    }
+
+    $sent[$text] = $ok;
+    return $ok;
+}
+
+// Health snapshot for monitoring. It never returns a token, webhook secret,
+// mailbox password or admin email: only booleans that show whether each part
+// is configured. GET /api.php/bot/health is public and read-only.
+function bot_health()
+{
+    $config = bot_config();
+    $pdo = bot_db();
+    $database = false;
+    if ($pdo) {
+        try {
+            $pdo->query('SELECT 1');
+            $database = true;
+        } catch (Exception $error) {
+            error_log('bot health database check failed: ' . $error->getMessage());
+        }
+    }
+
+    return array(
+        'configured' => $config['token'] !== '' && $config['admin_id'] !== '',
+        'webhook_secret' => strlen($config['webhook_secret']) >= 32,
+        'imap' => $config['imap_host'] !== '' && $config['imap_pass'] !== '',
+        'database' => $database,
+    );
+}
+
+function bot_handle_health()
+{
+    if (isset($_SERVER['REQUEST_METHOD']) && strtoupper((string) $_SERVER['REQUEST_METHOD']) !== 'GET') {
+        http_response_code(405);
+        header('Allow: GET');
+        exit;
+    }
+
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    header('X-Content-Type-Options: nosniff');
+    echo json_encode(
+        array('status' => 'ok', 'data' => bot_health()),
+        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+    );
+    exit;
 }
 
 // Resolve a Telegram user against admin_users. The bot must follow the web

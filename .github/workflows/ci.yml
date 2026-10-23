@@ -89,6 +89,13 @@ jobs:
           grep -q "bot_find_admin(\$fromId)" backend/bot.php
           echo "OK: bot multi-admin guards"
 
+          echo "== bot health endpoint =="
+          grep -q "function bot_handle_health" backend/bot.php
+          grep -q "function bot_health" backend/bot.php
+          grep -q "bot_handle_health" api.php
+          grep -q "function bot_alert_admin" backend/bot.php
+          echo "OK: bot health + alert"
+
           echo "== backend/contact.php: bot_notify_admins =="
           grep -q "bot_notify_admins" backend/contact.php
           echo "OK: contact notify"

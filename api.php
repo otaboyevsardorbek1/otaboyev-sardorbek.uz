@@ -743,6 +743,12 @@ if ($requestPath === '/health' || $requestPath === '/status') {
     exit;
 }
 
+if ($requestPath === '/bot/health') {
+    require __DIR__ . '/backend/bot.php';
+    bot_handle_health();
+    exit;
+}
+
 if ($requestPath === '/bot/webhook') {
     require __DIR__ . '/backend/bot.php';
     bot_handle_webhook();

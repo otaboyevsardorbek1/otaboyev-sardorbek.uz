@@ -144,6 +144,23 @@ check('bot_audit writes action',     $row && $row['action'] === 'bot_test_action
 check('bot_audit writes entity=bot', $row && $row['entity'] === 'bot');
 check('bot_audit writes details JSON', $row && json_decode($row['details'], true) === array('k' => 'v'));
 
+echo "\n== bot_health (no secrets) ==\n";
+
+$health = bot_health();
+check('bot_health returns array', is_array($health));
+foreach (array('configured', 'webhook_secret', 'imap', 'database') as $key) {
+    check('bot_health ' . $key . ' is bool', isset($health[$key]) && is_bool($health[$key]));
+}
+check('bot_health reports database reachable', $health['database'] === true);
+check('bot_health exposes only boolean flags',
+    array_keys($health) === array('configured', 'webhook_secret', 'imap', 'database')
+    && count(array_filter($health, 'is_bool')) === 4);
+
+echo "\n== bot_alert_admin (best-effort) ==\n";
+
+$alerted = bot_alert_admin('guard test alert');
+check('bot_alert_admin returns bool and does not throw', is_bool($alerted));
+
 echo "\n== bot_notify_admins (best-effort, fake token) ==\n";
 
 // The fake token cannot deliver anything, so bot_api() fails. This proves the
