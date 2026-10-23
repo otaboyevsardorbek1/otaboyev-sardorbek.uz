@@ -11,12 +11,13 @@ Oxirgi audit: **2026-10-22**. Joriy ish va backlog — [tz.md](tz.md), uzoq mudd
 | Dependency o‘rnatish | `npm install` (yoki `npm ci`) |
 | Next dev server | `npm run dev` — API yo‘q; frontend statik fallback bilan ishlaydi |
 | Static export | `npm run build` → `out/`; postbuild `files/`, `js/`, `css/`, `favicon.svg`, `api.php`, `backend/`, `.htaccess`, `sitemap.xml` ni ko‘chiradi. `config.local.php` **ko‘chirilmaydi**; deployda web rootga qo‘lda `600` bilan qo‘yiladi, lokal preview skriptlari uni `out/` ga nusxalaydi |
-| CI | `.github/workflows/ci.yml` — push/PR’da `npm ci`, `npm run check`, `npm run build` va export fayllarini tekshiradi |
+| CI | `.github/workflows/ci.yml` — push/PR’da `npm ci`, `npm run check`, statik RBAC/bot guard tekshiruvlari, MySQL 8.0 servisida migratsiyalar (bot guards va admin role ikki marta), `tests/bot-guard-test.php`, `npm run build` va export artefakti tekshiriladi |
 | Lokal preview | `./run_local.sh` (`APP_ENV=local`, default `127.0.0.1:8000`); to‘xtatish `./stop_local.sh` |
 | Server preview | `./run_server.sh` (`APP_ENV=production`, default `127.0.0.1:8081`); to‘xtatish `./stop_server.sh` |
 | Production ops | `./scripts/production-ops.sh {migrate|build|deploy|cron|logs|maildns|verify|all}` — serverda cPanel user sifatida; deploy snapshot olib `config.local.php` va `.well-known/` ni saqlaydi, `cron` kunlik backup + 5 daqiqalik health monitor, `logs` user-level logrotate, `maildns` SPF/DKIM/DMARC, `verify` jonli HTTP tekshiruvlari |
 | Export preview (manual) | `APP_ENV=local SITE_URL=http://127.0.0.1:8000 DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out` |
-| Sintaksis tekshiruvi | `npm run check` — `php -l api.php`, backend fayllari, `scripts/php-server-router.php`, `node --check js/portfolio.js`, run/stop skriptlari `bash -n`; JSX ni `npm run build` tekshiradi |
+| Bot guard testlari | `DB_HOST=127.0.0.1 DB_NAME=test_portfolio DB_USER=root DB_PASS='' php tests/bot-guard-test.php` (yoki `DB_SOCKET=...`); Telegram’ga chiqmaydi |
+| Sintaksis tekshiruvi | `npm run check` — `php -l api.php`, backend fayllari, `scripts/php-server-router.php`, `tests/bot-guard-test.php`, `node --check js/portfolio.js`, run/stop skriptlari va `scripts/*.sh` `bash -n`; JSX ni `npm run build` tekshiradi |
 | API health | `curl -s http://127.0.0.1:8000/api.php/health` |
 | Content API | `curl -s "http://127.0.0.1:8000/api.php/profile?lang=uz"` · `/api.php/projects?lang=uz` · `/api.php/projects/gitinsight?lang=uz` |
 | Admin config | `curl -s http://127.0.0.1:8000/api.php/admin/config` |
@@ -132,16 +133,18 @@ Matn o‘zgarsa — 3 tilda ham. `id`, `class`, `name`, `data-*` tarjima qilinma
 ## Tekshirish tartibi
 
 1. `npm run check`.
-2. `npm run build` — xatosiz export + postbuild copy; `out/` ichida `config.local.php`, `config.local.js`, `github_keys.txt` **yo‘qligi** va `404.html`, admin sahifalari, `.htaccess`, `api.php` borligi tekshiriladi (CI ham shuni tekshiradi).
-3. Test DB bilan: `APP_ENV=local SITE_URL=http://127.0.0.1:8000 DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... ./run_local.sh`; to‘xtatish `./stop_local.sh`. Skriptlar PHP built-in server ishlatadi, `.htaccess` qo‘llanmaydi; lokal preview `config.local.php` ni `out/` ga `600` bilan nusxalaydi.
-4. `/uz/`, `/en/`, `/ru/` + bitta ma’lum detail; Apache’da admin yaratgan slug `/uz/projects/<slug>/` fallback’i; F12 → Console/Network’da kutilmagan 404, CORS yoki hydration xatosi yo‘qligi.
-5. API: profile/projects/detail (uz/en/ru, invalid lang, 404 slug, DB yo‘q → 503); `OPTIONS`/GET public read endpointlarda `Access-Control-Allow-Origin: *`, form/admin/bot/token endpointlarda CORS header yo‘qligi; HTTP’da HSTS yo‘qligi.
-6. Contact formani yuborib ko‘r (Network’da `/api.php/form_container/submit`); DB’da `contact_messages` yozuvi, admin panelda xabar, `website` honeypot, invalid email → `422`, 5 ta yuborishdan keyin `429`, 10 tadan keyin global IP limit `429`.
-7. Admin: `/admin/` config `enabled`; Telegram callback → challenge cookie → email kod (lokalda `log`) → session; noto‘g‘ri OTP 5 marta → 6-chida `429`; expired challenge/session; `Origin: null` yoki header’siz mutation → `403`, `X-Requested-With: XMLHttpRequest` bilan header’siz CLI → o‘tadi; noto‘g‘ri CSRF → `403`; admin CORS header yo‘qligi; dashboard headless xatosiz; inbox read/unread/delete; admin qo‘shish/tahrirlash/o‘chirish va self/last-admin himoyasi; sitemap yangilash.
-8. Bot: webhook secret yo‘q/noto‘g‘ri → `403`; GET → `405`; to‘g‘ri secret + ruxsatsiz yoki `is_active=0` user → `200` va Telegram xabari yuborilmasligi; bir xil `update_id` ikkinchi marta kelsa qayta ishlanmasligi (`bot_updates_seen`da bitta qator); `bot_rate_limit_ok(<tg_id>, 'send', 10)` 11-cha chaqiriqda `false`; faol admin bilan `/help`, `/whoami`, `/messages`, `/message <id>`, `/reply <id> | matn`, `/stats`, `/inbox`, `/read <uid>`, `/send ...`; contact formasi faol adminlarga Telegram xabar yuborishi; yuborilgan email `admin@` mailbox’iga tushishi; `getWebhookInfo` `pending_update_count=0`.
-9. `database/migrate-bot-guards.sql` va `database/migrate-admin-role.sql` ni ikki marta import qilib idempotentligini tekshir; `admin_users.role` ustuni va `idx_admin_users_role` indeksi borligini tasdiqla.
-10. Apache’da `/de/` va `/nope` → `404` + `404.html`; `/api.php/health` → 200; `config.local.php`, `github_keys.txt`, `backend/`, `database/` → 403.
-11. `git diff --check` va `git diff --stat`.
+2. Test DB (schema + seed + `migrate-bot-guards.sql`) bilan `php tests/bot-guard-test.php` — `bot_find_admin`, per-admin rate limit, `update_id` idempotentligi va `bot_audit`.
+3. `npm run build` — xatosiz export + postbuild copy; `out/` ichida `config.local.php`, `config.local.js`, `github_keys.txt`, `server_keys.txt` **yo‘qligi** va `404.html`, admin sahifalari, `.htaccess`, `api.php` borligi tekshiriladi (CI ham shuni tekshiradi).
+4. Test DB bilan: `APP_ENV=local SITE_URL=http://127.0.0.1:8000 DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... ./run_local.sh`; to‘xtatish `./stop_local.sh`. Skriptlar PHP built-in server ishlatadi, `.htaccess` qo‘llanmaydi; lokal preview `config.local.php` ni `out/` ga `600` bilan nusxalaydi.
+5. `/uz/`, `/en/`, `/ru/` + bitta ma’lum detail; Apache’da admin yaratgan slug `/uz/projects/<slug>/` fallback’i; F12 → Console/Network’da kutilmagan 404, CORS yoki hydration xatosi yo‘qligi.
+6. API: profile/projects/detail (uz/en/ru, invalid lang, 404 slug, DB yo‘q → 503); `OPTIONS`/GET public read endpointlarda `Access-Control-Allow-Origin: *`, form/admin/bot/token endpointlarda CORS header yo‘qligi; HTTP’da HSTS yo‘qligi.
+7. Contact formani yuborib ko‘r (Network’da `/api.php/form_container/submit`); DB’da `contact_messages` yozuvi, admin panelda xabar, `website` honeypot, invalid email → `422`, 5 ta yuborishdan keyin `429`, 10 tadan keyin global IP limit `429`.
+8. Admin: `/admin/` config `enabled`; Telegram callback → challenge cookie → email kod (lokalda `log`) → session; noto‘g‘ri OTP 5 marta → 6-chida `429`; expired challenge/session; `Origin: null` yoki header’siz mutation → `403`, `X-Requested-With: XMLHttpRequest` bilan header’siz CLI → o‘tadi; noto‘g‘ri CSRF → `403`; admin CORS header yo‘qligi; dashboard headless xatosiz; inbox read/unread/delete; admin qo‘shish/tahrirlash/o‘chirish va self/last-admin himoyasi; sitemap yangilash.
+9. RBAC: oddiy admin `/api.php/admin/admins*` → `403 forbidden`; super admin CRUD; noto‘g‘ri rol → `422`; oxirgi faol superni o‘chirish/deaktiv qilish/demote → `422 last_super_admin`; rol o‘zgarishi keyingi so‘rovda darhol kuchga kirishi; `admin_audit_log` da `role`.
+10. Bot: webhook secret yo‘q/noto‘g‘ri → `403`; GET → `405`; to‘g‘ri secret + ruxsatsiz yoki `is_active=0` user → `200` va Telegram xabari yuborilmasligi; bir xil `update_id` ikkinchi marta kelsa qayta ishlanmasligi (`bot_updates_seen`da bitta qator); `bot_rate_limit_ok(<tg_id>, 'send', 10)` 11-cha chaqiriqda `false`; faol admin bilan `/help`, `/whoami`, `/messages`, `/message <id>`, `/reply <id> | matn`, `/stats`, `/inbox`, `/read <uid>`, `/send ...`; contact formasi faol adminlarga Telegram xabar yuborishi; yuborilgan email `admin@` mailbox’iga tushishi; `getWebhookInfo` `pending_update_count=0`.
+11. `database/migrate-bot-guards.sql` va `database/migrate-admin-role.sql` ni ikki marta import qilib idempotentligini tekshir; `admin_users.role` ustuni va `idx_admin_users_role` indeksi borligini tasdiqla.
+12. Apache’da `/de/` va `/nope` → `404` + `404.html`; `/api.php/health` → 200; `config.local.php`, `github_keys.txt`, `backend/`, `database/` → 403.
+13. `git diff --check` va `git diff --stat`.
 
 GitHub bo‘limi tashqi `api.github.com` ga bog‘liq (tokensiz, rate limit bor) — offline fallback xato emas.
 

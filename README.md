@@ -104,6 +104,28 @@ curl -s "http://127.0.0.1:8000/api.php/projects?lang=en"
 curl -s "http://127.0.0.1:8000/api.php/projects/gitinsight?lang=ru"
 ```
 
+### Testlar
+```bash
+npm run check                      # PHP/JS/Bash lint + tests/bot-guard-test.php
+npm run build                      # static export + secret-free artifact
+
+# Bot guard unit testlari (real test DB, Telegram'ga chiqmaydi):
+DB_HOST=127.0.0.1 DB_NAME=test_portfolio DB_USER=root DB_PASS='' \
+  php tests/bot-guard-test.php
+# yoki: DB_SOCKET=/tmp/mysql.sock DB_NAME=test_portfolio DB_USER=root DB_PASS='' \
+#         php tests/bot-guard-test.php
+```
+
+Test DB tayyorlash:
+
+```bash
+mysql -u USER -p DB_NAME < database/schema.sql
+mysql -u USER -p DB_NAME < database/seed.sql
+mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
+```
+
+CI (`.github/workflows/ci.yml`) xuddi shu qadamlarni MySQL 8.0 servisida bajaradi: statik RBAC/bot guard tekshiruvlari, migratsiyalar (bot guards va admin role ikki marta), `tests/bot-guard-test.php`, build va artefakt tekshiruvi.
+
 ## Admin panel (Telegram + email OTP)
 
 Admin panel `/admin/` da. Kirish ikki bosqichli:
