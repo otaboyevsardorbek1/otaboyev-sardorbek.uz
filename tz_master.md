@@ -46,7 +46,7 @@ The repository has one Next.js frontend layer, one PHP content/admin backend and
 - `backend/contact.php` — contact validation, IP hash, rate limit, inbox persistence and native `id=contact` handler.
 - `backend/content.php` — public JSON content API.
 - `backend/admin.php` — Telegram + email OTP auth, sessions, CSRF, rate limits, audit log, profile/project CRUD, inbox, sitemap and admin-user management.
-- `backend/bot.php` — private Telegram email bridge: webhook secret + numeric admin allowlist, IMAP inbox/read and cPanel `mail()` send; `update_id` idempotency and command rate limits; only `/api.php/bot/webhook`.
+- `backend/bot.php` — private Telegram email bridge: webhook secret plus `admin_users.is_active` authorization (empty table falls back to `admin.telegram_id`), IMAP inbox/read, contact inbox commands, cPanel `mail()` send with `/reply`; `update_id` idempotency, per-admin command rate limits and audit rows; only `/api.php/bot/webhook`.
 - `backend/mailer.php` — `mail`, SMTP, Resend, Brevo and local `log` drivers.
 - `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql`.
 
@@ -150,7 +150,7 @@ Errors: `404 project_not_found`, `503 db_unavailable`, `405 method_not_allowed`,
 - Rate limits: challenge and start attempts per time window; auth events recorded.
 - Audit: profile/project, inbox read/delete, sitemap and admin-user mutations written to `admin_audit_log`.
 - Auth is disabled unless all required settings are valid: HTTPS production URL, mail driver, Telegram bot token/username, numeric admin ID, valid admin email and a 64-hex app secret.
-- Bot bridge: secret token (`hash_equals`) plus numeric `admin.telegram_id`; GET/other updates rejected; `update_id` idempotency (`bot_updates_seen`) and `/inbox`/`/read`/`/send` limits (`bot_rate_limit`); no OTP, bot token or mailbox password is sent to Telegram.
+- Bot bridge: secret token (`hash_equals`) plus `admin_users.is_active = 1` authorization (bootstrap `admin.telegram_id` only while the table is empty or missing); GET/other updates rejected; `update_id` idempotency (`bot_updates_seen`), per-admin limits (`bot_rate_limit`), `admin_audit_log` entries for bot actions; no OTP, bot token or mailbox password is sent to Telegram.
 - Never expose bot token, app secret, OTP, webhook secret, IMAP password or real admin email in public JSON or logs.
 - Production DB user has only `SELECT, INSERT, UPDATE, DELETE`; DDL is granted temporarily for migrations.
 

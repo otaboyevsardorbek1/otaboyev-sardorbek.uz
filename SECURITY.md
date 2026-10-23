@@ -12,7 +12,7 @@ Bu hujjat `otaboyev-sardorbek.uz` saytining admin autentifikatsiyasi, PHP API, c
 
 Admin panel manzillari: `/admin/`, `/admin/verify/`, `/admin/dashboard/`.
 
-Bot bridge alohida: `POST /api.php/bot/webhook` Telegram `X-Telegram-Bot-Api-Secret-Token` va numeric admin ID’ni tekshiradi; faqat `message` update’lari. `/send` emailni cPanel `mail()` bilan yuboradi, `/inbox` va `/read` esa IMAP orqali `admin@` qutisini o‘qiydi. Bot OTP, bot token, app secret yoki mailbox parolini Telegram’ga chiqarmaydi.
+Bot bridge alohida: `POST /api.php/bot/webhook` Telegram `X-Telegram-Bot-Api-Secret-Token` va `admin_users.is_active=1` ruxsatini tekshiradi; faqat `message` update’lari. `/send` va `/reply` emailni cPanel `mail()` bilan yuboradi, `/inbox` va `/read` esa IMAP orqali `admin@` qutisini o‘qiydi, `/messages` va `/message` web inbox’ni ko‘rsatadi. Bot OTP, bot token, app secret yoki mailbox parolini Telegram’ga chiqarmaydi.
 
 ## Top 20 himoya nazorati
 
@@ -45,11 +45,14 @@ Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `api.php` `display_errors=0` va `log
 
 - Faqat `POST /api.php/bot/webhook`; GET `405`, secret yo‘q/noto‘g‘ri `403`.
 - Telegram `secret_token` bilan `X-Telegram-Bot-Api-Secret-Token` solishtiriladi (`hash_equals`); secret kamida 32 belgi.
-- Update’dagi `from.id` va `chat.id` `admin.telegram_id`ga teng bo‘lishi shart; boshqa foydalanuvchi e’tiborsiz qoldiriladi.
-- `/inbox` va `/read` faqat `admin@otaboyev-sardorbek.uz` IMAP qutisini o‘qiydi; `/send` `no-reply@` orqali cPanel `mail()` bilan yuboradi.
-- Har bir `update_id` `bot_updates_seen`da bir marta qayd etiladi; Telegram retry’da `/send` takrorlanmaydi. `/inbox` 10/min, `/read` 20/min, `/send` 10/min (`bot_rate_limit`).
+- Update’dagi `from.id` va `chat.id` teng bo‘lishi va faqat private chat bo‘lishi shart. Ruxsat `admin_users.is_active = 1` dan olinadi; `is_active=0` yoki o‘chirilgan admin keyingi xabardan boshlab **jim** e’tiborsiz qoldiriladi. `admin_users` bo‘sh yoki jadval/DB vaqtincha yo‘q bo‘lsa faqat `admin.telegram_id` bootstrap ishlaydi (owner lockout bo‘lmasligi uchun).
+- `/inbox` va `/read` faqat `admin@otaboyev-sardorbek.uz` IMAP qutisini o‘qiydi; `/send` va `/reply` `no-reply@` orqali cPanel `mail()` bilan yuboradi. `/reply` manzilni qayta validatsiya qiladi va `Reply-To` sifatida javob bergan adminning emailini qo‘yadi.
+- `/messages`, `/unread`, `/message <id>` `contact_messages` (web inbox) bilan ishlaydi; `/message` o‘qilgan deb belgilaydi.
+- Har bir `update_id` `bot_updates_seen`da bir marta qayd etiladi; Telegram retry’da `/send` takrorlanmaydi. Limitlar **per Telegram ID**: `/messages` 20/min, `/unread` 20/min, `/message` 30/min, `/reply` 10/min, `/inbox` 10/min, `/read` 20/min, `/send` 10/min (`bot_rate_limit`).
+- Bot harakati `admin_audit_log` ga yoziladi (`entity='bot'`): `bot_message_read`, `bot_message_reply`, `bot_email_sent`.
+- Contact formasi saqlangandan keyin faol adminlarga (ko‘pi bilan 10 ta) best-effort Telegram xabar yuboriladi; yuborish xatosi forma javobiga ta’sir qilmaydi.
 - Bot token, OTP, app secret, IMAP/SMTP parollari javob yoki logga chiqarilmaydi. Webhook URL public, ammo secret va allowlist bo‘lmasa amal bajarilmaydi.
-- BotFather’da command’lar `setMyCommands` bilan ro‘yxatga olingan; webhook `allowed_updates=["message"]`.
+- BotFather’da command’lar `setMyCommands` bilan ro‘yxatga olingan (`scripts/set-bot-commands.sh`); webhook `allowed_updates=["message"]`.
 
 ## Email autentifikatsiyasi holati (2026-10-22)
 
@@ -96,8 +99,8 @@ Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `api.php` `display_errors=0` va `log
 - [x] HTTPS majburiy; HSTS, CSP, `X-Frame-Options: DENY` va boshqa headerlar javobda ko‘rinadi.
 - [x] `out/` build’ida `config.local.php` **yo‘q**; web rootga qo‘lda `600` bilan qo‘yiladi.
 - [x] `api.php` `display_errors=0`, `log_errors` yoqilgan.
-- [x] Telegram bot webhook secret + numeric admin ID allowlist; `pending_update_count=0`.
-- [x] Bot `update_id` idempotency va `/inbox`/`/read`/`/send` rate limit (`bot_updates_seen`, `bot_rate_limit`).
+- [x] Telegram bot webhook secret + `admin_users.is_active` ruxsati (bo‘sh jadvalda `admin.telegram_id` bootstrap); `pending_update_count=0`.
+- [x] Bot `update_id` idempotency, per-admin rate limit (`bot_updates_seen`, `bot_rate_limit`), `/messages`/`/message`/`/reply`/`/stats` va contact forma → Telegram xabarnomasi.
 - [ ] Logrotate: `bot.log` va PHP error log 10 MB (cPanel).
 - [ ] Kunlik DB backup + tashqi nusxa (cPanel/S3).
 - [ ] Monitoring/alerting: admin login fail, webhook secret fail, DB/IMAP fail (tashqi monitor yoki `alert_admin()`).

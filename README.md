@@ -22,7 +22,7 @@ Loyiha tuzilishi:
 - GitHub profil ma’lumotlarini yuklash
 - Contact form, MySQL inbox, honeypot/rate limit va fallback email ishlashi
 - Telegram Login Widget + email OTP asosidagi 2 bosqichli admin panel
-- Shaxsiy Telegram bot: IMAP inbox, xat o‘qish va cPanel orqali email yuborish (webhook secret + admin ID allowlist)
+- Shaxsiy Telegram bot: IMAP inbox, contact inbox, xat o‘qish/javob berish va cPanel orqali email yuborish (webhook secret + `admin_users` ruxsati)
 - Profil va loyihalarni uch tilda tahrirlash (CRUD), audit log va CSRF himoyasi
 - Inbox (read/unread/delete), adminlar boshqaruvi va avtomatik `sitemap.xml`
 - CSP/HSTS/frame/referrer/COOP/CORP xavfsizlik headerlari; `api.php` HSTS’ni faqat HTTPS’da yuboradi; API `X-Powered-By` olib tashlangan
@@ -138,7 +138,9 @@ Productionda `contact@otaboyev-sardorbek.uz` → `admin@otaboyev-sardorbek.uz` f
 
 ### 3. Telegram bot email bridge
 
-`backend/bot.php` private webhook rejimida ishlaydi va faqat `admin.telegram_id` ga ruxsat beradi. Bot token, webhook secret yoki OTP Telegram’ga yuborilmaydi. Har bir `update_id` `bot_updates_seen`da bir marta qayd etiladi (Telegram retry’da `/send` ikki marta bajarilmaydi); `/inbox` 10/min, `/read` 20/min, `/send` 10/min bilan cheklangan (`bot_rate_limit`). Bu jadvallar `database/migrate-bot-guards.sql` bilan qo‘shiladi; jadval bo‘lmasa bot ishlashda davom etadi, lekin guard’lar o‘chiq qoladi.
+`backend/bot.php` private webhook rejimida ishlaydi. Ruxsat `admin_users.is_active = 1` dan olinadi: web panelda adminni o‘chirsangiz, u keyingi xabardan boshlab botdan foydalana olmaydi. `admin_users` bo‘sh yoki jadval vaqtincha yo‘q bo‘lsa faqat `admin.telegram_id` bootstrap ishlaydi. Bot token, webhook secret yoki OTP Telegram’ga yuborilmaydi. Har bir `update_id` `bot_updates_seen`da bir marta qayd etiladi (Telegram retry’da `/send` ikki marta bajarilmaydi); limitlar per-admin: `/inbox` 10/min, `/read` 20/min, `/send` 10/min, `/reply` 10/min, `/messages` 20/min, `/message` 30/min (`bot_rate_limit`). Bu jadvallar `database/migrate-bot-guards.sql` bilan qo‘shiladi; jadval bo‘lmasa bot ishlashda davom etadi, lekin guard’lar o‘chiq qoladi.
+
+Komandalar: `/help`, `/whoami`, `/messages`, `/unread`, `/message <id>`, `/reply <id> | <matn>`, `/stats`, `/inbox`, `/read <uid>`, `/send <email> | <mavzu> | <matn>`. Contact formasi saqlanganda faol adminlarga Telegram xabarnomasi yuboriladi.
 
 1. `config.local.php` da `bot.webhook_secret` (kamida 32 belgi), `bot.imap_user` va `bot.imap_pass` ni to‘ldiring.
 2. cPanel IMAP hosti sifatida `panel2.eskiz.uz:993/imap/ssl` ishlatiladi. `mail.otaboyev-sardorbek.uz` sertifikat hostname’iga mos kelmaydi.
@@ -152,17 +154,15 @@ curl -sS "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
 curl -sS "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo"
 ```
 
-4. Bot command’larini e’lon qiling:
+4. Bot command’larini e’lon qiling (token env orqali, faylga yozilmaydi):
 
 ```bash
-curl -sS "https://api.telegram.org/bot${BOT_TOKEN}/setMyCommands" \
-  -H 'Content-Type: application/json' \
-  --data '{"commands":[{"command":"start","description":"Boshlash"},{"command":"inbox","description":"Oxirgi 5 xat"},{"command":"read","description":"Xatni uid bo‘yicha o‘qish"},{"command":"send","description":"Email yuborish"},{"command":"help","description":"Yordam"}]}'
+BOT_TOKEN="$TELEGRAM_BOT_TOKEN" ./scripts/set-bot-commands.sh
 ```
 
-5. Telegram’da botga o‘zingiz yozib `/help`, `/inbox`, `/read <uid>` va `/send email@example.com | Mavzu | Matn` ni sinang.
+5. Telegram’da botga o‘zingiz yozib `/help`, `/whoami`, `/messages`, `/message <id>`, `/reply <id> | Matn`, `/stats`, `/inbox`, `/read <uid>` va `/send email@example.com | Mavzu | Matn` ni sinang.
 
-Webhook secret yo‘q yoki noto‘g‘ri bo‘lsa `403`, GET so‘rov `405` qaytadi; boshqa Telegram ID’dan kelgan update e’tiborsiz qoldiriladi.
+Webhook secret yo‘q yoki noto‘g‘ri bo‘lsa `403`, GET so‘rov `405` qaytadi; faol bo‘lmagan admin yoki begona Telegram ID’dan kelgan update **jim** e’tiborsiz qoldiriladi.
 
 ### 4. Config
 

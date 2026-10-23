@@ -319,5 +319,18 @@ function contact_native_submit(array $payload)
         return array(false, 'Message could not be saved. Please try again or email directly.', 503);
     }
 
+    // Best-effort: ping every active admin in Telegram. Failures here must not
+    // change the contact form response.
+    if (is_file(__DIR__ . '/bot.php')) {
+        require_once __DIR__ . '/bot.php';
+        $preview = function_exists('mb_substr') ? mb_substr($message, 0, 500, 'UTF-8') : substr($message, 0, 500);
+        bot_notify_admins(
+            "📩 Yangi xabar\n"
+            . 'Kimdan: ' . $name . ' <' . $email . ">\n"
+            . 'Mavzu: ' . $subject . "\n\n"
+            . $preview
+        );
+    }
+
     return array(true, 'Message sent successfully.', 200);
 }

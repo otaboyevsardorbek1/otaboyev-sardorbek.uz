@@ -75,6 +75,88 @@ function bot_db()
     }
 }
 
+// Resolve a Telegram user against admin_users. The bot must follow the web
+// panel: an admin switched off (is_active = 0) or deleted loses bot access on
+// the next message. When the database or the table is unavailable, only the
+// bootstrap telegram_id from config keeps working so the owner is not locked
+// out by a temporary DB outage.
+function bot_find_admin($telegramId)
+{
+    static $cache = array();
+    $telegramId = (string) $telegramId;
+    if ($telegramId === '') {
+        return null;
+    }
+    if (array_key_exists($telegramId, $cache)) {
+        return $cache[$telegramId];
+    }
+
+    $config = bot_config();
+    $pdo = bot_db();
+
+    $bootstrap = array(
+        'id' => 0,
+        'telegram_id' => $telegramId,
+        'email' => $config['from'],
+        'display_name' => null,
+        'telegram_username' => null,
+        'is_active' => 1,
+    );
+
+    if (!$pdo) {
+        $cache[$telegramId] = ($telegramId === $config['admin_id']) ? $bootstrap : null;
+        return $cache[$telegramId];
+    }
+
+    try {
+        $statement = $pdo->prepare(
+            'SELECT id, telegram_id, email, display_name, telegram_username, is_active
+             FROM admin_users WHERE telegram_id = :tg LIMIT 1'
+        );
+        $statement->execute(array(':tg' => $telegramId));
+        $row = $statement->fetch();
+
+        if ($row && (int) $row['is_active'] === 1) {
+            $cache[$telegramId] = $row;
+            return $cache[$telegramId];
+        }
+
+        // An existing admin_users table is authoritative: bootstrap fallback
+        // only applies while the table is still empty (first install).
+        $count = (int) $pdo->query('SELECT COUNT(*) FROM admin_users')->fetchColumn();
+        $cache[$telegramId] = ($count === 0 && $telegramId === $config['admin_id']) ? $bootstrap : null;
+        return $cache[$telegramId];
+    } catch (Exception $error) {
+        error_log('bot admin lookup failed: ' . $error->getMessage());
+        $cache[$telegramId] = ($telegramId === $config['admin_id']) ? $bootstrap : null;
+        return $cache[$telegramId];
+    }
+}
+
+function bot_audit($admin, $action, $details = null)
+{
+    $pdo = bot_db();
+    if (!$pdo || !is_array($admin)) {
+        return;
+    }
+    $adminId = isset($admin['id']) ? (int) $admin['id'] : 0;
+    try {
+        $statement = $pdo->prepare(
+            'INSERT INTO admin_audit_log (admin_id, action, entity, ip_hash, details)
+             VALUES (:aid, :a, :e, NULL, :d)'
+        );
+        $statement->execute(array(
+            ':aid' => $adminId > 0 ? $adminId : null,
+            ':a' => (string) $action,
+            ':e' => 'bot',
+            ':d' => $details === null ? null
+                : json_encode($details, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        ));
+    } catch (Exception $error) {
+        error_log('bot audit failed: ' . $error->getMessage());
+    }
+}
+
 // Telegram retries webhook updates. Remember every update_id so a retried
 // /send cannot deliver the same email twice. Missing tables only disable the
 // guard; the bot keeps working.
@@ -99,12 +181,13 @@ function bot_is_duplicate_update($updateId)
     }
 }
 
-function bot_rate_limit_ok($command, $maxPerMinute)
+function bot_rate_limit_ok($telegramId, $command, $maxPerMinute)
 {
-    $config = bot_config();
-    $adminId = (int) $config['admin_id'];
-    if ($adminId < 1) {
-        return false;
+    $telegramId = (int) $telegramId;
+    if ($telegramId < 1) {
+        // Bootstrap config always has a numeric telegram_id, so this is only
+        // hit for malformed calls. Do not lock the owner out.
+        return true;
     }
     $pdo = bot_db();
     if (!$pdo) {
@@ -118,13 +201,13 @@ function bot_rate_limit_ok($command, $maxPerMinute)
              WHERE admin_id = :admin_id AND command = :command
                AND created_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 MINUTE)'
         );
-        $statement->execute(array(':admin_id' => $adminId, ':command' => (string) $command));
+        $statement->execute(array(':admin_id' => $telegramId, ':command' => (string) $command));
         if ((int) $statement->fetchColumn() >= (int) $maxPerMinute) {
             return false;
         }
 
         $insert = $pdo->prepare('INSERT INTO bot_rate_limit (admin_id, command, created_at) VALUES (:admin_id, :command, UTC_TIMESTAMP())');
-        $insert->execute(array(':admin_id' => $adminId, ':command' => (string) $command));
+        $insert->execute(array(':admin_id' => $telegramId, ':command' => (string) $command));
 
         if (random_int(1, 50) === 1) {
             $pdo->exec('DELETE FROM bot_rate_limit WHERE created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY)');
@@ -202,6 +285,32 @@ function bot_send_message($chatId, $text)
     }
 
     return true;
+}
+
+// Best-effort broadcast to every active admin. Used by the contact form and
+// other server-side events; one failing recipient never blocks the others.
+function bot_notify_admins($text)
+{
+    $pdo = bot_db();
+    if (!$pdo) {
+        return 0;
+    }
+
+    $sent = 0;
+    try {
+        // Cap the fan-out so a contact submission cannot stall on many chats.
+        $rows = $pdo->query('SELECT telegram_id FROM admin_users WHERE is_active = 1 ORDER BY id ASC LIMIT 10')->fetchAll();
+        foreach ($rows as $row) {
+            $tgId = isset($row['telegram_id']) ? (string) $row['telegram_id'] : '';
+            if ($tgId !== '' && bot_send_message($tgId, $text)) {
+                $sent++;
+            }
+        }
+    } catch (Exception $error) {
+        error_log('bot notify admins failed: ' . $error->getMessage());
+    }
+
+    return $sent;
 }
 
 function bot_imap_open()
@@ -287,7 +396,7 @@ function bot_mail_read($inbox, $uid)
     );
 }
 
-function bot_send_email($to, $subject, $body)
+function bot_send_email($to, $subject, $body, $replyTo = '')
 {
     $config = bot_config();
     $to = bot_clean_header($to, 320);
@@ -295,6 +404,10 @@ function bot_send_email($to, $subject, $body)
     $body = bot_clean_body($body, 10000);
     $from = bot_clean_header($config['from'], 320);
     $fromName = bot_clean_header($config['from_name'], 120);
+    $replyTo = bot_clean_header($replyTo, 320);
+    if ($replyTo !== '' && filter_var($replyTo, FILTER_VALIDATE_EMAIL) === false) {
+        $replyTo = '';
+    }
 
     if (filter_var($to, FILTER_VALIDATE_EMAIL) === false || filter_var($from, FILTER_VALIDATE_EMAIL) === false) {
         return array(false, 'Invalid email address');
@@ -306,11 +419,12 @@ function bot_send_email($to, $subject, $body)
     if ($config['driver'] === 'smtp') {
         $mail = admin_config()['mail'];
         $html = '<pre style="white-space:pre-wrap;font-family:Arial,sans-serif">' . htmlspecialchars($body, ENT_QUOTES, 'UTF-8') . '</pre>';
+        // admin_mail_send_smtp() does not accept Reply-To; the mail driver below does.
         return admin_mail_send_smtp($mail, $to, $subject, $body, $html);
     }
 
     $headers = 'From: ' . ($fromName !== '' ? $fromName . ' <' . $from . '>' : $from) . "\r\n"
-        . 'Reply-To: ' . $from . "\r\n"
+        . 'Reply-To: ' . ($replyTo !== '' ? $replyTo : $from) . "\r\n"
         . 'MIME-Version: 1.0' . "\r\n"
         . 'Content-Type: text/plain; charset=UTF-8' . "\r\n"
         . 'Content-Transfer-Encoding: 8bit' . "\r\n";
@@ -321,12 +435,74 @@ function bot_send_email($to, $subject, $body)
 
 function bot_help_text()
 {
-    return "Admin email bridge\n\n"
-        . "/inbox — oxirgi 5 xat\n"
-        . "/read <uid> — xatni o‘qish\n"
-        . "/send <email> | <mavzu> | <matn> — xat yuborish\n"
+    return "Admin email & inbox bridge\n\n"
+        . "/whoami — joriy admin ma’lumoti\n"
+        . "/messages — oxirgi 10 contact xabar\n"
+        . "/unread — faqat o‘qilmagan xabarlar\n"
+        . "/message <id> — contact xabarni o‘qish\n"
+        . "/reply <id> | matn — foydalanuvchiga email javob\n"
+        . "/stats — statistika\n\n"
+        . "/inbox — oxirgi 5 email (IMAP)\n"
+        . "/read <uid> — emailni o‘qish\n"
+        . "/send <email> | <mavzu> | <matn> — email yuborish\n"
         . "/help — yordam\n\n"
-        . "Faqat ruxsat etilgan Telegram akkaunt ishlata oladi.";
+        . "Faqat faol adminlar foydalana oladi (web panelda boshqariladi).";
+}
+
+// Contact inbox helpers. Both return null when the database is unavailable so
+// the handler can tell "no data" apart from "no rows".
+function bot_web_inbox_list($limit, $unreadOnly)
+{
+    $pdo = bot_db();
+    if (!$pdo) {
+        return null;
+    }
+    $limit = max(1, min(20, (int) $limit));
+    $where = $unreadOnly ? ' WHERE is_read = 0' : '';
+    try {
+        $statement = $pdo->query(
+            'SELECT id, name, email, subject, is_read, created_at
+             FROM contact_messages' . $where . '
+             ORDER BY is_read ASC, created_at DESC
+             LIMIT ' . $limit
+        );
+        return $statement->fetchAll();
+    } catch (Exception $error) {
+        error_log('bot web inbox list failed: ' . $error->getMessage());
+        return null;
+    }
+}
+
+function bot_web_message_read($id)
+{
+    $pdo = bot_db();
+    if (!$pdo) {
+        return null;
+    }
+    $id = (int) $id;
+    if ($id < 1) {
+        return null;
+    }
+    try {
+        $statement = $pdo->prepare(
+            'SELECT id, form_id, locale, name, email, subject, message, is_read, created_at
+             FROM contact_messages WHERE id = :id LIMIT 1'
+        );
+        $statement->execute(array(':id' => $id));
+        $row = $statement->fetch();
+        if (!$row) {
+            return null;
+        }
+        if ((int) $row['is_read'] === 0) {
+            $update = $pdo->prepare('UPDATE contact_messages SET is_read = 1 WHERE id = :id');
+            $update->execute(array(':id' => $id));
+            $row['is_read'] = 1;
+        }
+        return $row;
+    } catch (Exception $error) {
+        error_log('bot web message read failed: ' . $error->getMessage());
+        return null;
+    }
 }
 
 function bot_handle_update(array $update)
@@ -338,14 +514,23 @@ function bot_handle_update(array $update)
     $message = $update['message'];
     $chat = isset($message['chat']) && is_array($message['chat']) ? $message['chat'] : array();
     $from = isset($message['from']) && is_array($message['from']) ? $message['from'] : array();
-    $config = bot_config();
     $chatId = isset($chat['id']) ? (string) $chat['id'] : '';
     $fromId = isset($from['id']) ? (string) $from['id'] : '';
 
-    if ($chatId === '' || $fromId === '' || $chatId !== $config['admin_id'] || $fromId !== $config['admin_id']) {
+    if ($chatId === '' || $fromId === '') {
         return;
     }
     if (isset($chat['type']) && $chat['type'] !== 'private') {
+        return;
+    }
+    if ($chatId !== $fromId) {
+        return;
+    }
+
+    // Only active admin_users rows may talk to the bot. Unknown or disabled
+    // accounts are dropped silently so the bot does not reveal itself.
+    $admin = bot_find_admin($fromId);
+    if (!$admin) {
         return;
     }
 
@@ -355,13 +540,165 @@ function bot_handle_update(array $update)
         return;
     }
 
-    if ($text === '/start' || $text === '/help' || strpos($text, '/start@') === 0 || strpos($text, '/help@') === 0) {
+    $tgId = (int) $admin['telegram_id'];
+
+    // --- /start, /help -------------------------------------------------
+    if ($text === '/start' || $text === '/help'
+        || strpos($text, '/start@') === 0 || strpos($text, '/help@') === 0) {
         bot_send_message($chatId, bot_help_text());
         return;
     }
 
+    // --- /whoami -------------------------------------------------------
+    if ($text === '/whoami' || strpos($text, '/whoami@') === 0) {
+        $name = isset($admin['display_name']) && $admin['display_name']
+            ? $admin['display_name'] : 'Admin';
+        $email = isset($admin['email']) ? $admin['email'] : '';
+        bot_send_message($chatId,
+            $name . "\nTelegram ID: " . $admin['telegram_id'] . "\nEmail: " . $email);
+        return;
+    }
+
+    // --- /messages (contact inbox) -------------------------------------
+    if ($text === '/messages' || $text === '/msgs' || strpos($text, '/messages@') === 0) {
+        if (!bot_rate_limit_ok($tgId, 'messages', 20)) {
+            bot_send_message($chatId, 'Juda ko‘p so‘rov. Bir daqiqadan keyin qayta urinib ko‘ring.');
+            return;
+        }
+        $rows = bot_web_inbox_list(10, false);
+        if ($rows === null) {
+            bot_send_message($chatId, 'Xabarlar bazasi mavjud emas.');
+            return;
+        }
+        if (count($rows) === 0) {
+            bot_send_message($chatId, 'Contact inbox bo‘sh.');
+            return;
+        }
+        $lines = array('Contact inbox (oxirgi ' . count($rows) . '):');
+        foreach ($rows as $row) {
+            $lines[] = ((int) $row['is_read'] === 0 ? '● ' : '  ')
+                . '#' . $row['id'] . ' — ' . ($row['subject'] ? $row['subject'] : '(mavzusiz)') . "\n   "
+                . ($row['name'] ? $row['name'] : $row['email']) . ' · ' . $row['created_at'];
+        }
+        $lines[] = 'Ochish uchun: /message <id>';
+        bot_send_message($chatId, implode("\n\n", $lines));
+        return;
+    }
+
+    // --- /unread -------------------------------------------------------
+    if ($text === '/unread' || strpos($text, '/unread@') === 0) {
+        if (!bot_rate_limit_ok($tgId, 'unread', 20)) {
+            bot_send_message($chatId, 'Juda ko‘p so‘rov.');
+            return;
+        }
+        $rows = bot_web_inbox_list(10, true);
+        if ($rows === null) {
+            bot_send_message($chatId, 'Xabarlar bazasi mavjud emas.');
+            return;
+        }
+        if (count($rows) === 0) {
+            bot_send_message($chatId, 'O‘qilmagan xabar yo‘q.');
+            return;
+        }
+        $lines = array('O‘qilmagan xabarlar (' . count($rows) . '):');
+        foreach ($rows as $row) {
+            $lines[] = '#' . $row['id'] . ' — ' . ($row['subject'] ? $row['subject'] : '(mavzusiz)') . "\n   "
+                . ($row['name'] ? $row['name'] : $row['email']) . ' · ' . $row['created_at'];
+        }
+        bot_send_message($chatId, implode("\n\n", $lines));
+        return;
+    }
+
+    // --- /message <id> -------------------------------------------------
+    if (preg_match('#^/message(?:@[A-Za-z0-9_]+)?\s+([0-9]{1,12})$#', $text, $matches)) {
+        if (!bot_rate_limit_ok($tgId, 'message', 30)) {
+            bot_send_message($chatId, 'Juda ko‘p so‘rov.');
+            return;
+        }
+        $row = bot_web_message_read((int) $matches[1]);
+        if (!$row) {
+            bot_send_message($chatId, 'Xabar topilmadi.');
+            return;
+        }
+        bot_send_message($chatId,
+            'Xabar #' . $row['id'] . "\n"
+            . 'Kimdan: ' . ($row['name'] ? $row['name'] : '(ism yo‘q)') . ' <' . ($row['email'] ? $row['email'] : '-') . ">\n"
+            . 'Mavzu: ' . ($row['subject'] ? $row['subject'] : '(mavzusiz)') . "\n"
+            . 'Sana: ' . $row['created_at'] . "\n"
+            . 'Locale: ' . ($row['locale'] ? $row['locale'] : '-') . "\n\n"
+            . ($row['message'] ? $row['message'] : '(matn yo‘q)') . "\n\n"
+            . 'Javob: /reply ' . $row['id'] . ' | <matn>');
+        bot_audit($admin, 'bot_message_read', array('message_id' => (int) $row['id']));
+        return;
+    }
+
+    // --- /reply <id> | matn -------------------------------------------
+    if (preg_match('#^/reply(?:@[A-Za-z0-9_]+)?\s+([0-9]{1,12})\s*\|\s*(.+)$#s', $text, $matches)) {
+        if (!bot_rate_limit_ok($tgId, 'reply', 10)) {
+            bot_send_message($chatId, 'Juda ko‘p email javob so‘rovi.');
+            return;
+        }
+        $id = (int) $matches[1];
+        $body = trim((string) $matches[2]);
+        if ($body === '' || strlen($body) > 5000) {
+            bot_send_message($chatId, 'Javob matni 1–5000 belgi oralig‘ida bo‘lishi kerak.');
+            return;
+        }
+        $pdo = bot_db();
+        if (!$pdo) {
+            bot_send_message($chatId, 'Baza mavjud emas.');
+            return;
+        }
+        try {
+            $statement = $pdo->prepare('SELECT id, email, subject FROM contact_messages WHERE id = :id LIMIT 1');
+            $statement->execute(array(':id' => $id));
+            $original = $statement->fetch();
+        } catch (Exception $error) {
+            error_log('bot reply lookup failed: ' . $error->getMessage());
+            $original = null;
+        }
+        if (!$original || !$original['email']) {
+            bot_send_message($chatId, 'Xabar yoki email topilmadi.');
+            return;
+        }
+        $replyToEmail = isset($admin['email']) ? (string) $admin['email'] : '';
+        $subject = 'Re: ' . ($original['subject'] ? $original['subject'] : 'Your message');
+        $result = bot_send_email($original['email'], $subject, $body, $replyToEmail);
+        if ($result[0]) {
+            bot_send_message($chatId, 'Javob yuborildi: ' . $original['email']);
+            bot_audit($admin, 'bot_message_reply', array('message_id' => $id, 'to' => $original['email']));
+        } else {
+            bot_send_message($chatId, 'Javob yuborilmadi: ' . $result[1]);
+        }
+        return;
+    }
+
+    // --- /stats -------------------------------------------------------
+    if ($text === '/stats' || strpos($text, '/stats@') === 0) {
+        $pdo = bot_db();
+        if (!$pdo) {
+            bot_send_message($chatId, 'Baza mavjud emas.');
+            return;
+        }
+        try {
+            $unread = (int) $pdo->query('SELECT COUNT(*) FROM contact_messages WHERE is_read = 0')->fetchColumn();
+            $total = (int) $pdo->query('SELECT COUNT(*) FROM contact_messages')->fetchColumn();
+            $activeAdmins = (int) $pdo->query('SELECT COUNT(*) FROM admin_users WHERE is_active = 1')->fetchColumn();
+            bot_send_message($chatId,
+                "Statistika:\n"
+                . "O‘qilmagan xabar: $unread\n"
+                . "Jami xabar: $total\n"
+                . "Faol adminlar: $activeAdmins");
+        } catch (Exception $error) {
+            error_log('bot stats failed: ' . $error->getMessage());
+            bot_send_message($chatId, 'Statistika olinmadi.');
+        }
+        return;
+    }
+
+    // --- /inbox (IMAP email) ------------------------------------------
     if ($text === '/inbox' || $text === '/mail' || strpos($text, '/inbox@') === 0) {
-        if (!bot_rate_limit_ok('inbox', 10)) {
+        if (!bot_rate_limit_ok($tgId, 'inbox', 10)) {
             bot_send_message($chatId, 'Juda ko‘p so‘rov. Bir daqiqadan keyin qayta urinib ko‘ring.');
             return;
         }
@@ -385,8 +722,9 @@ function bot_handle_update(array $update)
         return;
     }
 
+    // --- /read <uid> (IMAP) -------------------------------------------
     if (preg_match('#^/read(?:@[A-Za-z0-9_]+)?\s+([0-9]{1,12})$#', $text, $matches)) {
-        if (!bot_rate_limit_ok('read', 20)) {
+        if (!bot_rate_limit_ok($tgId, 'read', 20)) {
             bot_send_message($chatId, 'Juda ko‘p so‘rov. Bir daqiqadan keyin qayta urinib ko‘ring.');
             return;
         }
@@ -408,8 +746,9 @@ function bot_handle_update(array $update)
         return;
     }
 
+    // --- /send <email> | mavzu | matn (IMAP) --------------------------
     if (preg_match('#^/send(?:@[A-Za-z0-9_]+)?\s+(.+)$#s', $text, $matches)) {
-        if (!bot_rate_limit_ok('send', 10)) {
+        if (!bot_rate_limit_ok($tgId, 'send', 10)) {
             bot_send_message($chatId, 'Juda ko‘p email so‘rovi. Bir daqiqadan keyin qayta urinib ko‘ring.');
             return;
         }
@@ -421,6 +760,7 @@ function bot_handle_update(array $update)
         $result = bot_send_email(trim($parts[0]), trim($parts[1]), trim($parts[2]));
         if ($result[0]) {
             bot_send_message($chatId, 'Email yuborildi: ' . bot_clean_header(trim($parts[0]), 320));
+            bot_audit($admin, 'bot_email_sent', array('to' => bot_clean_header(trim($parts[0]), 320)));
         } else {
             bot_send_message($chatId, 'Email yuborilmadi: ' . $result[1]);
         }
