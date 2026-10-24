@@ -80,10 +80,11 @@ function bot_db()
     }
 }
 
-// Best-effort alert to the configured owner. Used by the health endpoint and
-// when the bot loses the database. It never throws: a failed Telegram call is
-// written to the PHP error log instead. bot_alert_admin() is safe to call
-// before bot_config() is fully initialized because bot_config() is lazy.
+// Best-effort alert to the configured owner. Used when the bot loses the
+// database. It never throws: a failed Telegram call is written to the PHP
+// error log instead. Repeated identical alerts are suppressed for 15 minutes so
+// a DB outage cannot flood the chat. bot_alert_admin() is safe to call before
+// bot_config() is fully initialized because bot_config() is lazy.
 function bot_alert_admin($message)
 {
     static $sent = array();
@@ -94,6 +95,14 @@ function bot_alert_admin($message)
     }
     if (array_key_exists($text, $sent)) {
         return $sent[$text];
+    }
+
+    $marker = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+        . DIRECTORY_SEPARATOR . 'otaboyev-bot-alert-' . substr(hash('sha256', $text), 0, 24);
+    $last = @filemtime($marker);
+    if ($last !== false && time() - (int) $last < 900) {
+        $sent[$text] = false;
+        return false;
     }
 
     $config = bot_config();
@@ -109,25 +118,25 @@ function bot_alert_admin($message)
         error_log('bot alert: ' . $text);
     }
 
+    @touch($marker);
     $sent[$text] = $ok;
     return $ok;
 }
 
 // Health snapshot for monitoring. It never returns a token, webhook secret,
 // mailbox password or admin email: only booleans that show whether each part
-// is configured. GET /api.php/bot/health is public and read-only.
+// is configured. GET /api.php/bot/health is public and read-only, so it must
+// not trigger alerts or any other side effect (the monitor calls it often).
 function bot_health()
 {
     $config = bot_config();
-    $pdo = bot_db();
     $database = false;
-    if ($pdo) {
-        try {
-            $pdo->query('SELECT 1');
-            $database = true;
-        } catch (Exception $error) {
-            error_log('bot health database check failed: ' . $error->getMessage());
-        }
+    try {
+        $pdo = content_db();
+        $pdo->query('SELECT 1');
+        $database = true;
+    } catch (Exception $error) {
+        error_log('bot health database check failed: ' . $error->getMessage());
     }
 
     return array(
@@ -484,46 +493,25 @@ function bot_send_email($to, $subject, $body, $replyTo = '')
     $to = bot_clean_header($to, 320);
     $subject = bot_clean_header($subject, 200);
     $body = bot_clean_body($body, 10000);
-    $from = bot_clean_header($config['from'], 320);
-    $fromName = bot_clean_header($config['from_name'], 120);
     $replyTo = bot_clean_header($replyTo, 320);
     if ($replyTo !== '' && filter_var($replyTo, FILTER_VALIDATE_EMAIL) === false) {
         $replyTo = '';
     }
 
-    if (filter_var($to, FILTER_VALIDATE_EMAIL) === false || filter_var($from, FILTER_VALIDATE_EMAIL) === false) {
+    if (filter_var($to, FILTER_VALIDATE_EMAIL) === false || filter_var($config['from'], FILTER_VALIDATE_EMAIL) === false) {
         return array(false, 'Invalid email address');
     }
     if ($subject === '' || $body === '') {
         return array(false, 'Subject and body are required');
     }
 
-    if ($config['driver'] === 'log') {
-        $mail = admin_config()['mail'];
-        $appEnv = isset(admin_config()['app_env']) ? (string) admin_config()['app_env'] : 'production';
-        if ($appEnv === 'production' || $mail['log_file'] === '') {
-            return array(false, 'Log mail driver is disabled');
-        }
-        $line = gmdate('c') . ' to=' . $to . ' subject=' . $subject . ' body=' . $body . "\n";
-        $written = @file_put_contents($mail['log_file'], $line, FILE_APPEND | LOCK_EX);
-        return $written === false ? array(false, 'Unable to write mail log') : array(true, '');
-    }
+    $html = '<pre style="white-space:pre-wrap;font-family:Arial,sans-serif">'
+        . htmlspecialchars($body, ENT_QUOTES, 'UTF-8') . '</pre>';
 
-    if ($config['driver'] === 'smtp') {
-        $mail = admin_config()['mail'];
-        $html = '<pre style="white-space:pre-wrap;font-family:Arial,sans-serif">' . htmlspecialchars($body, ENT_QUOTES, 'UTF-8') . '</pre>';
-        // admin_mail_send_smtp() does not accept Reply-To; the mail driver below does.
-        return admin_mail_send_smtp($mail, $to, $subject, $body, $html);
-    }
-
-    $headers = 'From: ' . ($fromName !== '' ? $fromName . ' <' . $from . '>' : $from) . "\r\n"
-        . 'Reply-To: ' . ($replyTo !== '' ? $replyTo : $from) . "\r\n"
-        . 'MIME-Version: 1.0' . "\r\n"
-        . 'Content-Type: text/plain; charset=UTF-8' . "\r\n"
-        . 'Content-Transfer-Encoding: 8bit' . "\r\n";
-    $sent = @mail($to, $subject, $body, $headers, '-f ' . $from);
-
-    return $sent ? array(true, '') : array(false, 'Mail service rejected the message');
+    // One delivery path for every driver (log, smtp, resend, brevo, mail), so
+    // /reply keeps the admin Reply-To and /send never silently falls back to
+    // PHP mail() when a different driver is configured.
+    return admin_mail_send($to, $subject, $body, $html, $replyTo);
 }
 
 function bot_help_text()

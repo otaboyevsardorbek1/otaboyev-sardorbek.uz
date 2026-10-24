@@ -72,10 +72,7 @@ do_migrate() {
 
   for file in database/migrate-project-sections.sql database/migrate-contact-messages.sql database/migrate-bot-guards.sql database/migrate-admin-role.sql; do
     [ -f "$APP_DIR/$file" ] || { log "skip $file (absent)"; continue; }
-    if [ "$file" = "database/migrate-project-sections.sql" ]; then
-      log "NOTE: $file is not idempotent; import only if columns are missing"
-    fi
-    log "importing $file"
+    log "importing $file (idempotent)"
     mysql "${args[@]}" < "$APP_DIR/$file"
   done
 
@@ -203,6 +200,8 @@ SITE_URL="$SITE_URL"
 LOG_DIR="$LOG_DIR"
 STATE="$HOME/.config/otaboyev-ops/monitor.state"
 BOT_STATE="$HOME/.config/otaboyev-ops/bot.state"
+SECRET_STATE="$HOME/.config/otaboyev-ops/bot-secret.state"
+DB_STATE="$HOME/.config/otaboyev-ops/db.state"
 mkdir -p "\$LOG_DIR"
 
 TOKEN=\$(php -r '\$c = require \$argv[1]; echo \$c["admin"]["telegram_bot_token"] ?? "";' "\$APP_DIR/config.local.php")
@@ -229,15 +228,57 @@ fi
 # Bot bridge: config presence + Telegram webhook backlog.
 bot=\$(curl -sS --max-time 15 "\$SITE_URL/api.php/bot/health" 2>/dev/null || echo '')
 case "\$bot" in
-  *'"configured":true'*)
-    if [ -f "\$BOT_STATE" ]; then rm -f "\$BOT_STATE"; notify "✅ Telegram bot yana ishlayapti"; fi ;;
+  *'"status":"ok"'*) ;;
   *)
+    # Endpoint unreachable (old deploy, 404/5xx): report once and skip the
+    # per-field checks instead of firing three alerts.
     if [ ! -f "\$BOT_STATE" ]; then
       date -Is > "\$BOT_STATE"
-      notify "🚨 Telegram bot sozlanmagan yoki health javob bermayapti (\$SITE_URL/api.php/bot/health)"
+      notify "🚨 Bot health endpoint javob bermayapti (\$SITE_URL/api.php/bot/health)"
     fi
-    echo "\$(date -Is) bot_health=unconfigured" >> "\$LOG_DIR/monitor.log" ;;
+    echo "\$(date -Is) bot_health=endpoint_down" >> "\$LOG_DIR/monitor.log"
+    bot=''
+    ;;
 esac
+
+if [ -n "\$bot" ]; then
+  case "\$bot" in
+    *'"configured":true'*)
+      if [ -f "\$BOT_STATE" ]; then rm -f "\$BOT_STATE"; notify "✅ Telegram bot yana ishlayapti"; fi ;;
+    *)
+      if [ ! -f "\$BOT_STATE" ]; then
+        date -Is > "\$BOT_STATE"
+        notify "🚨 Telegram bot sozlanmagan (token yoki admin ID yo‘q)"
+      fi
+      echo "\$(date -Is) bot_health=unconfigured" >> "\$LOG_DIR/monitor.log" ;;
+  esac
+
+  # A missing webhook secret means Telegram rejects every update, so the
+  # bridge is effectively off even when configured=true.
+  case "\$bot" in
+    *'"webhook_secret":true'*)
+      if [ -f "\$SECRET_STATE" ]; then rm -f "\$SECRET_STATE"; notify "✅ Bot webhook secret yana sozlangan"; fi ;;
+    *)
+      if [ ! -f "\$SECRET_STATE" ]; then
+        date -Is > "\$SECRET_STATE"
+        notify "🚨 Bot webhook_secret sozlanmagan (kamida 32 belgi kerak)"
+      fi
+      echo "\$(date -Is) bot_health=no_webhook_secret" >> "\$LOG_DIR/monitor.log" ;;
+  esac
+
+  # The content API and the bot share one database. Report an outage once and
+  # clear the flag when it recovers.
+  case "\$bot" in
+    *'"database":true'*)
+      if [ -f "\$DB_STATE" ]; then rm -f "\$DB_STATE"; notify "✅ Baza yana javob bermoqda"; fi ;;
+    *)
+      if [ ! -f "\$DB_STATE" ]; then
+        date -Is > "\$DB_STATE"
+        notify "🚨 Baza javob bermayapti: /api.php/bot/health database=false"
+      fi
+      echo "\$(date -Is) bot_health=database_down" >> "\$LOG_DIR/monitor.log" ;;
+  esac
+fi
 
 if [ -n "\$TOKEN" ]; then
   info=\$(curl -sS --max-time 15 "https://api.telegram.org/bot\$TOKEN/getWebhookInfo" 2>/dev/null || echo '')
@@ -364,6 +405,14 @@ do_verify() {
     *'"configured":true'*) printf '  ok   %-28s configured\n' "telegram bot" ;;
     *) printf '  FAIL %-28s not configured\n' "telegram bot"; failures=$((failures + 1)) ;;
   esac
+  case "$bot" in
+    *'"webhook_secret":true'*) printf '  ok   %-28s secret set\n' "bot webhook secret" ;;
+    *) printf '  FAIL %-28s secret missing/short\n' "bot webhook secret"; failures=$((failures + 1)) ;;
+  esac
+  case "$bot" in
+    *'"database":true'*) printf '  ok   %-28s reachable\n' "bot database" ;;
+    *) printf '  FAIL %-28s unreachable\n' "bot database"; failures=$((failures + 1)) ;;
+  esac
 
   [ "$failures" -eq 0 ] && log "all checks passed" || die "$failures check(s) failed"
 }
@@ -381,7 +430,7 @@ case "${1:-}" in
     cat <<EOF
 usage: $0 {migrate|build|deploy|cron|logs|maildns|verify|all}
 
-  migrate  import pending migrations (project-sections, contact-messages, bot-guards)
+  migrate  import pending migrations (project-sections, contact-messages, bot-guards, admin-role)
   build    npm ci + npm run check + npm run build on the server
   deploy   build (unless SKIP_BUILD=1) and publish out/ to the web root
   cron     install daily backup + 5-minute health monitor
