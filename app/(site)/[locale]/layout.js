@@ -3,12 +3,14 @@ import { LOCALES, SITE_URL } from '../../../content/locales';
 
 export const metadata = {
   metadataBase: new URL(SITE_URL),
-  icons: { icon: '/favicon.svg' },
+  manifest: '/manifest.webmanifest',
+  icons: { icon: '/favicon.svg', apple: '/favicon.svg' },
 };
 
 export const viewport = {
   width: 'device-width',
   initialScale: 1,
+  themeColor: '#08101d',
 };
 
 export function generateStaticParams() {

@@ -27,6 +27,11 @@ RewriteRule ^ https://otaboyev-sardorbek.uz%{REQUEST_URI} [L,R=301]
 # Serve the locale homepage as the root default
 RewriteRule ^$ /index.html [L]
 
+# Canonical trailing slashes must run before the internal locale rewrite,
+# otherwise /uz is served directly with 200 instead of redirecting to /uz/.
+RewriteRule ^(uz|en|ru)$ /$1/ [R=301,L]
+RewriteRule ^(uz|en|ru)/projects$ /$1/projects/ [R=301,L]
+
 # Redirect language root routes to correct locale page
 RewriteRule ^uz/?$ /uz/index.html [L]
 RewriteRule ^ru/?$ /ru/index.html [L]

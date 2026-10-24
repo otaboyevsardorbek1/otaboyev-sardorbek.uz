@@ -149,6 +149,41 @@ export const content = {
     footer: {
       name: 'Sardorbek Otaboyev',
       note: 'Modern backend mahsulotlari uchun yaratilgan.',
+      privacy: 'Maxfiylik siyosati',
+    },
+    privacy: {
+      title: 'Maxfiylik siyosati',
+      description:
+        'Bu sayt qanday ma’lumot yig‘ishi, nima uchun ishlatilishi va qanday saqlanishi haqida qisqa ma’lumot.',
+      updated: 'Oxirgi yangilanish: 2026-yil 24-oktabr',
+      back: 'Bosh sahifaga qaytish',
+      sections: [
+        {
+          title: 'Qanday ma’lumot yig‘iladi',
+          body:
+            'Aloqa formasidan faqat siz kiritgan ism, email, mavzu va xabar saqlanadi. Texnik xavfsizlik uchun IP manzil hash ko‘rinishida (ochiq matnda emas) va yuborilgan vaqt qayd etiladi.',
+        },
+        {
+          title: 'Nima uchun ishlatiladi',
+          body:
+            'Ma’lumot faqat xabaringizga javob berish va spam yoki suiiste’moldan himoyalanish uchun ishlatiladi. Reklama, profil yaratish yoki uchinchi tomonga sotish yo‘q.',
+        },
+        {
+          title: 'Qayerda saqlanadi',
+          body:
+            'Xabarlar hostingdagi MySQL bazasida saqlanadi. Yangi xabar haqida egasiga email va Telegram orqali bildirishnoma yuboriladi. Sayt uchinchi tomon analitikasi yoki reklama skriptlarini ishlatmaydi.',
+        },
+        {
+          title: 'Cookie va lokal xotira',
+          body:
+            'Mehmonlar uchun cookie o‘rnatilmaydi. Tanlangan mavzu (light/dark) brauzer lokal xotirasida saqlanadi. Admin panelga kirganda xavfsizlik uchun HttpOnly sessiya cookie ishlatiladi; u faqat admin uchun.',
+        },
+        {
+          title: 'Saqlash muddati va huquqlaringiz',
+          body:
+            'Xabarlar o‘chirilgunga qadar saqlanadi; xohlasangiz, yuborgan xabaringizni o‘chirishni so‘rashingiz mumkin. Murojaat uchun: otaboyevsardorbek1@gmail.com.',
+        },
+      ],
     },
   },
 
@@ -297,6 +332,41 @@ export const content = {
     footer: {
       name: 'Sardorbek Otaboyev',
       note: 'Built for modern backend products.',
+      privacy: 'Privacy policy',
+    },
+    privacy: {
+      title: 'Privacy policy',
+      description:
+        'A short overview of what this site collects, why it is used and how it is stored.',
+      updated: 'Last updated: 24 October 2026',
+      back: 'Back to home',
+      sections: [
+        {
+          title: 'What is collected',
+          body:
+            'The contact form stores only the name, email, subject and message you submit. For security, the IP address is recorded as a hash (never in plain text) together with the submission time.',
+        },
+        {
+          title: 'Why it is used',
+          body:
+            'Data is used only to reply to your message and to protect the form from spam or abuse. There is no advertising, profiling or selling data to third parties.',
+        },
+        {
+          title: 'Where it is stored',
+          body:
+            'Messages are stored in a MySQL database on the hosting. New messages trigger an email and Telegram notification to the owner. The site does not use third-party analytics or ad scripts.',
+        },
+        {
+          title: 'Cookies and local storage',
+          body:
+            'No cookies are set for visitors. The selected theme (light/dark) is stored in browser local storage. Signing in to the admin panel uses a secure HttpOnly session cookie; that applies to the admin only.',
+        },
+        {
+          title: 'Retention and your rights',
+          body:
+            'Messages are kept until deleted; you may request deletion of a message you sent. Contact: otaboyevsardorbek1@gmail.com.',
+        },
+      ],
     },
   },
 
@@ -445,6 +515,41 @@ export const content = {
     footer: {
       name: 'Сардорбек Отабоев',
       note: 'Создано для современных backend-продуктов.',
+      privacy: 'Политика конфиденциальности',
+    },
+    privacy: {
+      title: 'Политика конфиденциальности',
+      description:
+        'Кратко о том, какие данные собирает сайт, зачем они используются и как хранятся.',
+      updated: 'Последнее обновление: 24 октября 2026',
+      back: 'Вернуться на главную',
+      sections: [
+        {
+          title: 'Какие данные собираются',
+          body:
+            'Форма обратной связи сохраняет только имя, email, тему и сообщение, которые вы отправили. Для безопасности IP-адрес записывается в виде хеша (не в открытом виде) вместе со временем отправки.',
+        },
+        {
+          title: 'Зачем они используются',
+          body:
+            'Данные используются только для ответа на ваше сообщение и защиты формы от спама. Рекламы, профилирования и продажи данных третьим лицам нет.',
+        },
+        {
+          title: 'Где они хранятся',
+          body:
+            'Сообщения хранятся в базе MySQL на хостинге. О новом сообщении владелец получает уведомление по email и в Telegram. Сайт не использует стороннюю аналитику или рекламные скрипты.',
+        },
+        {
+          title: 'Cookie и локальное хранилище',
+          body:
+            'Для посетителей cookie не устанавливаются. Выбранная тема (светлая/тёмная) хранится в локальном хранилище браузера. Вход в админ-панель использует защищённую HttpOnly-сессию; это касается только администратора.',
+        },
+        {
+          title: 'Срок хранения и ваши права',
+          body:
+            'Сообщения хранятся до удаления; вы можете запросить удаление отправленного сообщения. Контакт: otaboyevsardorbek1@gmail.com.',
+        },
+      ],
     },
   },
 };

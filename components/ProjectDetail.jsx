@@ -49,11 +49,14 @@ function DetailHeader({ locale, labels, slug }) {
   );
 }
 
-function DetailFooter() {
+function DetailFooter({ locale }) {
   return (
     <footer className="site-footer">
       <div className="container footer-inner">
         <span>© <span suppressHydrationWarning>{new Date().getFullYear()}</span> Sardorbek Otaboyev</span>
+        <span className="footer-links">
+          <a href={`/${locale}/privacy/`}>Privacy</a>
+        </span>
       </div>
     </footer>
   );
@@ -145,7 +148,7 @@ export default function ProjectDetail({ locale, slug = '', fallback = null, labe
             </div>
           </section>
         </main>
-        <DetailFooter />
+        <DetailFooter locale={locale} />
       </>
     );
   }
@@ -171,6 +174,11 @@ export default function ProjectDetail({ locale, slug = '', fallback = null, labe
 
         <section className="section">
           <div className="container narrow detail-content">
+            {project.image_url && (
+              <figure className="detail-cover">
+                <img src={project.image_url} alt={project.title} loading="lazy" />
+              </figure>
+            )}
             {descriptionParts.length > 0 && (
               <>
                 <h2>{labels.about}</h2>
@@ -202,7 +210,7 @@ export default function ProjectDetail({ locale, slug = '', fallback = null, labe
           </div>
         </section>
       </main>
-      <DetailFooter />
+      <DetailFooter locale={locale} />
     </>
   );
 }

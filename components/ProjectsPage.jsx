@@ -170,7 +170,10 @@ export default function ProjectsPage({ locale, copy }) {
           <span>
             © {year} {copy.footer.name}
           </span>
-          <span>{copy.footer.note}</span>
+          <span className="footer-links">
+            <span>{copy.footer.note}</span>
+            <a href={`/${locale}/privacy/`}>{copy.footer.privacy}</a>
+          </span>
         </div>
       </footer>
     </div>

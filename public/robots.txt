@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /api.php/admin/
+Disallow: /api.php/bot/
+Disallow: /api.php/form_container/
+Disallow: /api.php/websites
+
+Sitemap: https://otaboyev-sardorbek.uz/sitemap.xml

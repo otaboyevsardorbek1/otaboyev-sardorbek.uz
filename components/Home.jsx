@@ -3,8 +3,32 @@
 import { useEffect, useRef, useState } from 'react';
 
 const GITHUB_USER = 'otaboyevsardorbek1';
+const GITHUB_CACHE_TTL = 15 * 60 * 1000;
+const GITHUB_PROFILE_CACHE = 'portfolio-github-profile';
+const GITHUB_REPOS_CACHE = 'portfolio-github-repos';
 const THEME_KEY = 'portfolio-theme';
 const BLOCKED_REPO_TOKENS = ['porn', 'xxx', 'adult', 'template', 'demo', 'example', 'archive', 'trash', 'test', 'copy'];
+
+function readGithubCache(key) {
+  try {
+    const raw = window.localStorage?.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.savedAt !== 'number' || !parsed.data) return null;
+    if (Date.now() - parsed.savedAt > GITHUB_CACHE_TTL) return null;
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+function writeGithubCache(key, data) {
+  try {
+    window.localStorage?.setItem(key, JSON.stringify({ savedAt: Date.now(), data }));
+  } catch (error) {
+    // Storage can be disabled in private mode; the page still works without it.
+  }
+}
 
 function sanitizeRepoName(value) {
   return String(value || '')
@@ -243,52 +267,78 @@ export default function Home({ locale, copy }) {
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     };
+    const cachedProfile = readGithubCache(GITHUB_PROFILE_CACHE);
+    const cachedRepos = readGithubCache(GITHUB_REPOS_CACHE);
 
-    fetch(`https://api.github.com/users/${GITHUB_USER}`, { headers, signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error('GitHub profile request failed');
-        return response.json();
-      })
-      .then((data) => {
-        setProfile({
-          login: data.login || copy.github.defaultLogin,
-          bio: data.bio || copy.github.defaultBio,
-          repos: data.public_repos || 0,
-          followers: data.followers || 0,
-          following: data.following || 0,
-        });
-        if (data.avatar_url) {
-          setAvatar(data.avatar_url);
-        }
-      })
-      .catch(() => {
-        setProfile({
-          login: copy.github.defaultLogin,
-          bio: copy.github.defaultBio,
-          repos: '20+',
-          followers: 0,
-          following: 0,
-        });
-      });
+    if (cachedProfile?.data?.profile) {
+      setProfile(cachedProfile.data.profile);
+      if (cachedProfile.data.avatar) setAvatar(cachedProfile.data.avatar);
+    }
+    if (cachedRepos?.data?.repos) {
+      setRepos(cachedRepos.data.repos);
+    }
+    if (cachedProfile && cachedRepos) {
+      return () => controller.abort();
+    }
 
-    fetch(`https://api.github.com/users/${GITHUB_USER}/repos?sort=updated&per_page=100`, {
-      headers,
-      signal: controller.signal,
-    })
-      .then((response) => {
-        if (!response.ok) throw new Error('GitHub repo request failed');
-        return response.json();
+    if (!cachedProfile) {
+      fetch(`https://api.github.com/users/${GITHUB_USER}`, { headers, signal: controller.signal })
+        .then((response) => {
+          if (!response.ok) throw new Error('GitHub profile request failed');
+          return response.json();
+        })
+        .then((data) => {
+          const nextProfile = {
+            login: data.login || copy.github.defaultLogin,
+            bio: data.bio || copy.github.defaultBio,
+            repos: data.public_repos || 0,
+            followers: data.followers || 0,
+            following: data.following || 0,
+          };
+          setProfile(nextProfile);
+          if (data.avatar_url) {
+            setAvatar(data.avatar_url);
+          }
+          writeGithubCache(GITHUB_PROFILE_CACHE, {
+            profile: nextProfile,
+            avatar: data.avatar_url || '',
+          });
+        })
+        .catch(() => {
+          setProfile({
+            login: copy.github.defaultLogin,
+            bio: copy.github.defaultBio,
+            repos: '20+',
+            followers: 0,
+            following: 0,
+          });
+        });
+    }
+
+    if (!cachedRepos) {
+      fetch(`https://api.github.com/users/${GITHUB_USER}/repos?sort=updated&per_page=100`, {
+        headers,
+        signal: controller.signal,
       })
-      .then((data) => {
-        const cleaned = (Array.isArray(data) ? data : [])
-          .filter(isSafeRepo)
-          .sort((a, b) => (b.stargazers_count || 0) - (a.stargazers_count || 0))
-          .slice(0, 6);
-        setRepos(cleaned.length ? cleaned : copy.github.fallbackRepos);
-      })
-      .catch(() => {
-        setRepos(copy.github.fallbackRepos);
-      });
+        .then((response) => {
+          if (!response.ok) throw new Error('GitHub repo request failed');
+          return response.json();
+        })
+        .then((data) => {
+          const cleaned = (Array.isArray(data) ? data : [])
+            .filter(isSafeRepo)
+            .sort((a, b) => (b.stargazers_count || 0) - (a.stargazers_count || 0))
+            .slice(0, 6);
+          const nextRepos = cleaned.length ? cleaned : copy.github.fallbackRepos;
+          setRepos(nextRepos);
+          if (cleaned.length) {
+            writeGithubCache(GITHUB_REPOS_CACHE, { repos: nextRepos });
+          }
+        })
+        .catch(() => {
+          setRepos(copy.github.fallbackRepos);
+        });
+    }
 
     return () => controller.abort();
   }, [copy.github]);
@@ -718,7 +768,10 @@ export default function Home({ locale, copy }) {
           <span>
             © {year} {copy.footer.name}
           </span>
-          <span>{copy.footer.note}</span>
+          <span className="footer-links">
+            <span>{copy.footer.note}</span>
+            <a href={`/${locale}/privacy/`}>{copy.footer.privacy}</a>
+          </span>
         </div>
       </footer>
     </div>

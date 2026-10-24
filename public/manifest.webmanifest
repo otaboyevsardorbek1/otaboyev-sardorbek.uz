@@ -1,0 +1,16 @@
+{
+  "name": "Sardorbek Otaboyev",
+  "short_name": "SO",
+  "description": "Backend developer portfolio: APIs, AI integrations and Telegram bots.",
+  "start_url": "/uz/",
+  "display": "standalone",
+  "background_color": "#08101d",
+  "theme_color": "#08101d",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
