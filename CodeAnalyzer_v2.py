@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Code Analyzer Pro Ultimate Edition v3
-═══════════════════════════════════════════════════════════════════════════════
-BARCHA FUNKSIYALAR BIRLASHTIRILGAN:
-  1. Kod tahlili (Code Analysis) — to'liq tahlil, JSON/HTML/TXT hisobotlar
-  2. Tree Generator — papka strukturasini daraxt ko'rinishida chiqarish
-  3. Project Generator (Universal) — TREE/JSON/YAML dan loyiha yaratish
-  4. Demo Generator — namuna fayllar yaratish
-  5. Tizim statistikasi
-═══════════════════════════════════════════════════════════════════════════════
-"""
-
 import os
 import sys
 import json
