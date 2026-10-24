@@ -1,0 +1,1430 @@
+================================================================================
+OTABOYEV-SARDORBEK.UZ — TIZIM MA'LUMOTNOMASI
+================================================================================
+Hujjat versiyasi : 1.0
+Sana            : 2026-10-24
+Til             : o'zbekcha
+Maqsad          : sayt, backend, admin panel, Telegram bot, baza, build, deploy,
+                  CI va operatsion jarayonlarning to'liq texnik tavsifi.
+Manba           : AGENTS.md, README.md, SECURITY.md, package.json,
+                  database/schema.sql, backend/*.php, app/, components/,
+                  .github/workflows/ci.yml, scripts/, sitemap.xml.
+
+MAXFIYLIK: bu faylda token, parol, OTP, API kalit, webhook secret yoki
+config.local.php ichidagi qiymatlar YO'Q. Faqat sozlama nomlari va tizim
+xatti-harakati yozilgan.
+
+================================================================================
+1. BIR QARASHDA — ASOSIY STATISTIKA
+================================================================================
+
+Domen                   : https://otaboyev-sardorbek.uz
+Sayt turi               : shaxsiy portfolio / kontent sayti
+Tilllar                 : uz, en, ru (3 ta)
+Frontend                : Next.js App Router, statik export (out/)
+Backend                 : PHP 7.1+ mos, MySQL content API
+Admin panel             : Telegram Login + email OTP + session
+Telegram bot            : shaxsiy email/inbox ko'prigi (webhook)
+Hosting                 : cPanel shared hosting, Apache + .htaccess
+Git branch              : main
+Baseline commit         : 41897c8 ci: verify export artifacts, media migration
+                          and document new features
+Git kuzatuvidagi fayllar: 685 ta (shu hujjat bilan)
+Manba hajmi             : ~12 MB (node_modules, .git, .next, out hisobga olinmagan)
+Repo umumiy hajmi       : ~569 MB (node_modules ~464 MB, .git ~23 MB,
+                          .next ~69 MB, out ~3.1 MB bilan)
+Manba fayllari          : 690 ta (node_modules/.git/.next/outdan tashqari)
+Asosiy kod fayllari     : 47 ta; ~12 327 satr
+Build natijasi          : out/ — 174 fayl, ~3.1 MB
+Statik HTML sahifalar   : 27 ta index.html
+Sitemap                 : 18 URL
+Ma'lum loyihalar        : 3 ta (gitinsight, service-platform, telegram-ops)
+Project detail sahifalar: 9 ta (3 loyiha x 3 til)
+Admin sahifalar         : 3 ta (/admin/, /admin/verify/, /admin/dashboard/)
+Ma'lumotlar bazasi      : 12 jadval, InnoDB, utf8mb4
+Seed kontenti           : 1 profil + 3 profil tarjimasi + 3 loyiha +
+                          9 loyiha tarjimasi = 16 qator
+Public API route        : 9 ta route pattern
+Admin API route         : 17 ta route pattern
+Bot command guruhlari   : 10 ta (aliaslar bilan)
+CI job                  : 1 job — lint, schema, RBAC, bot guards, build
+Bot guard testlari      : 47 ta tekshiruv
+Rasm yuklash limiti     : JPEG/PNG/WebP, <= 2 MB, 16..8000 px
+Contact limit           : 5 ta / 10 daqiqa / IP (native contact)
+                          + 10 ta / 10 daqiqa / IP (barcha form ID)
+Admin session           : 12 soat absolute TTL + 30 daqiqa idle
+OTP                     : 6 raqam, 10 daqiqa, 5 urinish
+Backup                  : kunlik 03:10, 14 kun saqlash
+Monitor                 : har 5 daqiqada health + TLS + disk + bot
+Xavfsizlik headerlari   : CSP, HSTS (faqat HTTPS), X-Frame-Options,
+                          nosniff, Referrer-Policy, Permissions-Policy,
+                          COOP, CORP, X-Permitted-Cross-Domain-Policies
+
+================================================================================
+2. TEXNOLOGIYALAR VA VERSIYALAR
+================================================================================
+
+Runtime / platform:
+  - Node.js            : v22.23.2 (lokal), CI Node 22
+  - npm                : 10.9.8
+  - PHP                : 8.4.24 (lokal), CI PHP 8.2
+  - PHP kod talabi     : PHP 7.1+ sintaksisi
+  - MySQL              : CI MySQL 8.0; sxema MySQL 5.7+ / MariaDB 10.2+
+  - OS (lokal)         : Linux Kali 7.0.12 (x86_64)
+
+Frontend dependencies (package.json):
+  - next               : ^16.4.3
+  - react              : ^19.3.1
+  - react-dom          : ^19.3.1
+
+Frontend sozlamalari:
+  - output             : 'export'
+  - trailingSlash      : true
+  - images.unoptimized : true
+  - App Router         : app/ papkasi
+  - static export      : out/ papkasi
+
+Backend:
+  - api.php            : routing, CORS, token, health, form, bot, content
+  - backend/config.php : DB/admin/mail/bot sozlamalari
+  - backend/content.php: public content API
+  - backend/contact.php: contact form, inbox, email notification
+  - backend/admin.php  : auth, session, CSRF, CRUD, upload, inbox, sitemap
+  - backend/mailer.php : mail, smtp, resend, brevo, log driver
+  - backend/bot.php    : Telegram webhook, IMAP, email, inbox
+
+PHP kengaytmalari (production/CI talabi):
+  pdo_mysql, curl, openssl, mbstring, imap; lokalda qo'shimcha fileinfo,
+  json, session, random mavjud.
+
+Arxitektura uslubi:
+  - Frontend statik HTML/JS/CSS; SSR yo'q.
+  - Backend PHP request/response; alohida framework yo'q.
+  - MySQL — kontent va admin/inbox/bot guard holati.
+  - Admin panel va bot bir xil admin_users ruxsat modelidan foydalanadi.
+  - Barcha API javoblari JSON envelope bilan (bot/health ham).
+
+================================================================================
+3. TIZIM ARXITEKTURASI
+================================================================================
+
+So'rov oqimi:
+
+  Brauzer
+    |
+    +-- statik HTML/CSS/JS (out/) ---------------------- Apache / CDN yo'q
+    |
+    +-- /api.php/profile?lang=uz ----------------------- backend/content.php
+    +-- /api.php/projects?lang=uz ---------------------- backend/content.php
+    +-- /api.php/projects/{slug}?lang=uz --------------- backend/content.php
+    +-- /api.php/form_container/submit ----------------- backend/contact.php
+    +-- /api.php/admin/* ------------------------------- backend/admin.php
+    +-- /api.php/bot/webhook --------------------------- backend/bot.php
+    +-- /api.php/bot/health ---------------------------- backend/bot.php
+    +-- /api.php/health | /status ---------------------- api.php
+    +-- /api.php/websites ------------------------------ api.php (token)
+    |
+    +-- boshqa /api.php/* ------------------------------ api.sitehub.io proxy
+        /images* --------------------------------------- inter-cdn.com proxy
+
+Asosiy tamoyillar:
+  - Statik sahifalar build vaqtida tayyorlanadi; admin o'zgarishi API fetch
+    orqali ko'rinadi, lekin SEO uchun rebuild kerak.
+  - DB yo'q yoki ulanmagan bo'lsa public frontend statik fallback'ga qaytadi;
+    API 503 {status:"error",code:"db_unavailable"} qaytaradi.
+  - Admin panel va bot mutation'lari CSRF/session/rate-limit bilan yopilgan.
+  - Public read-only API'dan tashqari hech bir endpoint wildcard CORS ber maydi.
+
+================================================================================
+4. FRONTEND TUZILISHI
+================================================================================
+
+4.1. Route'lar
+
+  /                                      -> navigator.language bo'yicha
+                                            /uz/, /en/ yoki /ru/ ga client redirect
+  /uz/                                   -> o'zbekcha bosh sahifa
+  /en/                                   -> inglizcha bosh sahifa
+  /ru/                                   -> ruscha bosh sahifa
+  /{locale}/projects/                    -> loyihalar ro'yxati
+  /{locale}/projects/gitinsight/         -> statik project detail
+  /{locale}/projects/service-platform/   -> statik project detail
+  /{locale}/projects/telegram-ops/       -> statik project detail
+  /{locale}/projects/view/?slug=...      -> admin yaratgan yangi slug fallback
+  /{locale}/privacy/                     -> maxfiylik siyosati (3 til)
+  /admin/                                -> Telegram login
+  /admin/verify/                         -> email OTP
+  /admin/dashboard/                      -> protected admin panel
+  /404.html                              -> haqiqiy 404 sahifa
+
+  Build natijasida 27 ta index.html:
+    - 1 ta root redirect
+    - 3 ta home
+    - 3 ta listing
+    - 9 ta statik project detail
+    - 3 ta view fallback
+    - 3 ta privacy
+    - 3 ta admin
+    - 404 va _not-found bilan birga
+
+4.2. Asosiy komponentlar
+
+  components/Home.jsx           779 satr
+    - theme (light/dark), mobil nav, reveal animatsiyalar, tilt effekt
+    - loyiha filteri, counter/statistika bloklari
+    - content API'dan profile/projects fetch
+    - GitHub API: api.github.com/users/otaboyevsardorbek1
+      va repos?sort=updated&per_page=100
+    - GitHub javobi localStorage'da 15 daqiqa cache qilinadi
+    - contact form: /api.php/form_container/submit
+    - SEO/meta va JSON-LD page darajasida
+
+  components/ProjectsPage.jsx   181 satr
+    - ro'yxat sahifasi, theme, mobil nav, loyiha kartalari
+
+  components/ProjectDetail.jsx  216 satr
+    - statik fallback, API'dan yangilash, loading/404/503 holatlari
+    - title/meta/canonical client tomonda yangilanadi
+    - muqova rasmi (image_url) va texnologiyalar ro'yxati
+    - til almashtirgich va privacy footer linki
+
+  components/JsonLd.jsx         9 satr
+    - application/ld+json renderer; '<' belgisini escape qiladi
+
+  components/admin/Dashboard.jsx      205 satr
+  components/admin/ProfileEditor.jsx  193 satr
+  components/admin/ProjectManager.jsx 337 satr
+  components/admin/MessageInbox.jsx   259 satr
+  components/admin/AdminManager.jsx   271 satr
+  components/admin/api.js             API helper + CSRF + upload
+
+  css/portfolio.css             1265 satr
+  css/admin.css                 903 satr
+  content/locales.js            828 satr
+
+4.3. Admin panel UI
+
+  Tablar:
+    - Profil ma'lumotlari   -> ProfileEditor (3 til, avatar upload)
+    - Loyihalar boshqaruvi  -> ProjectManager (3 til, muqova upload)
+    - Kelgan xabarlar       -> MessageInbox (read/unread/delete)
+    - Adminlar boshqaruvi   -> AdminManager (faqat super rol)
+
+  Admin UI matnlari o'zbekcha; sayt matnlari uz/en/ru.
+
+4.4. Til almashtirish — birga o'zgaradigan joylar
+
+  1) content/locales.js — barcha matnlar, projectDetails, labels, privacy
+  2) app/(redirect)/page.js — SUPPORTED tillar
+  3) content/locales.js — LOCALES (generateStaticParams shundan oladi)
+  4) .htaccess — locale, API exclusion, 404, project fallback
+  5) sitemap.xml — 18 URL
+  6) canonical + hreflang — 3 home + 3 listing + 9 detail + 3 privacy
+  7) ProjectDetail lang-switcher va [slug]/page.js metadata
+  8) database/seed.sql tarjimalari
+
+  Qoida: matn o'zgarsa — 3 tilda ham. id, class, name, data-* tarjima
+  qilinmaydi.
+
+================================================================================
+5. PUBLIC CONTENT API
+================================================================================
+
+Envelope:
+  Muvaffaqiyat : { "status": "ok", "data": ... }
+  Xato        : { "status": "error", "message": "...", "code": "..." }
+
+5.1. GET /api.php/health
+    GET /api.php/status
+    -> 200 { "status": "ok" }
+
+5.2. GET /api.php/profile?lang=uz|en|ru
+    -> data:
+       { name, role, bio, quick_text, location, email, github, telegram,
+         telegram_handle, avatar_url }
+    Noto'g'ri lang -> uz.
+    DB yo'q -> 503 db_unavailable.
+
+5.3. GET /api.php/projects?lang=...
+    -> data: [
+         { slug, category, tag, title, summary, tech[], repo_url, demo_url,
+           image_url, detail_url }
+       ]
+    Faqat is_active = 1; sort_order bo'yicha.
+    tech — JSON massiv.
+
+5.4. GET /api.php/projects/{slug}?lang=...
+    -> yuqoridagi maydonlar + description, results[], stack_notes[]
+    Topilmagan slug -> 404 project_not_found.
+    Slug formati: /^[a-z0-9-]{1,80}$/.
+
+5.5. GET /api.php/websites
+    X-Api-Token: <token> yoki Authorization: Bearer <token>
+    Token tartibi: API_TOKEN -> SITEHUB_API_TOKEN -> OTABOYEV_API_TOKEN.
+    Faqat APP_ENV=local|development|test da `otaboyev-dev-token` fallback.
+    Noto'g'ri/yo'q token -> 401.
+    Productionda haqiqiy token berilmasa endpoint 401 qaytaradi.
+
+5.6. POST /api.php/form_container/submit
+    Contact form va Sitejet form proxy.
+    id=contact -> native handler (contact_messages).
+    Boshqa id -> form_<id>[ed-f-N] Sitejet kontrakti bo'yicha proxy.
+
+5.7. GET /api.php/bot/health
+    -> 200 { status:"ok", data:{ configured, webhook_secret, imap, database } }
+    Faqat booleanlar; token/secret/parol/email qiymati yo'q.
+    Boshqa method -> 405 Allow: GET.
+    Yon ta'sirsiz; bot_alert_admin chaqirmaydi.
+
+5.8. POST /api.php/bot/webhook
+    X-Telegram-Bot-Api-Secret-Token tekshiriladi.
+    Faqat `message` update'lari; secret yo'q/noto'g'ri -> 403.
+    GET -> 405 Allow: POST.
+    Body > 131072 bayt -> 413.
+    update_id idempotentligi bot_updates_seen orqali.
+
+5.9. Proxy fallback
+    Boshqa /api.php/* -> https://api.sitehub.io
+    /images* -> https://inter-cdn.com
+
+CORS:
+  - Faqat /profile, /projects, /projects/{slug}, /health, /status uchun
+    Access-Control-Allow-Origin: * va GET, OPTIONS.
+  - form, admin, bot, websites endpointlarida CORS header yo'q.
+  - .htaccess qo'shimcha himoya sifatida admin|bot|form_container|websites
+    javoblaridan CORS headerlarini o'chiradi.
+
+================================================================================
+6. ADMIN API VA AUTH
+================================================================================
+
+6.1. Admin auth oqimi
+
+  1) /admin/ Telegram Login Widget
+  2) GET /api.php/admin/auth/telegram
+     - Telegram HMAC imzosi tekshiriladi
+     - auth_date 300 soniya oynasida bo'lishi kerak
+     - admin_users.telegram_id va is_active=1 tekshiriladi
+     - challenge cookie (HttpOnly, SameSite=Lax) beriladi
+  3) Emailga 6 xonali OTP yuboriladi
+     - amal muddati 600 soniya
+     - 5 noto'g'ri urinishdan keyin 429
+     - OTP HMAC bilan hashlanadi
+  4) POST /api.php/admin/auth/verify
+     - muvaffaqiyatli bo'lsa admin_session cookie (HttpOnly, Secure HTTPS,
+       SameSite=Strict) va CSRF token beriladi
+  5) GET /api.php/admin/session har so'rovda admin_users bilan JOIN qiladi;
+     rol o'zgarsa darhol kuchga kiradi.
+
+  Rate limit:
+    - 15 daqiqada 3 ta login challenge
+    - 15 daqiqada 5 ta login start
+    - 5 ta OTP urinishi
+    - 429 rate_limited / too_many_attempts
+
+  Session:
+    - absolute TTL 43200 s (12 soat)
+    - idle TTL 1800 s (30 daqiqa), 300..43200 oralig'iga clamp
+    - last_seen_at yangilanadi
+    - logout bitta sessiyani, logout-all barcha sessiyalarni o'chiradi
+
+6.2. Admin route'lar
+
+  GET    /api.php/admin/config
+  GET    /api.php/admin/auth/telegram
+  GET    /api.php/admin/auth/status
+  POST   /api.php/admin/auth/verify
+  POST   /api.php/admin/auth/resend
+  GET    /api.php/admin/session[?optional=1]
+  POST   /api.php/admin/logout
+  POST   /api.php/admin/logout-all
+  POST   /api.php/admin/uploads
+  GET    /api.php/admin/profile
+  PUT    /api.php/admin/profile
+  GET    /api.php/admin/projects
+  POST   /api.php/admin/projects
+  GET    /api.php/admin/projects/{id}
+  PUT    /api.php/admin/projects/{id}
+  DELETE /api.php/admin/projects/{id}
+  GET    /api.php/admin/messages[?count=1|unread=1]
+  GET    /api.php/admin/messages/{id}
+  PUT    /api.php/admin/messages/{id}
+  DELETE /api.php/admin/messages/{id}
+  POST   /api.php/admin/sitemap
+  GET    /api.php/admin/admins
+  POST   /api.php/admin/admins
+  GET    /api.php/admin/admins/{id}
+  PUT    /api.php/admin/admins/{id}
+  DELETE /api.php/admin/admins/{id}
+
+  Mutation'larda X-CSRF-Token majburiy.
+  /admin/admins* faqat super rol uchun; aks holda 403 forbidden.
+
+6.3. Admin rollari
+
+  super  : kontent + inbox + boshqa adminlarni CRUD qilish
+  admin  : faqat kontent + inbox
+
+  Himoyalar:
+    - o'zini o'chirish/deaktiv qilish bloklangan
+    - oxirgi faol adminni o'chirish bloklangan
+    - oxirgi faol super adminni o'chirish/deaktiv qilish/rolini pasaytirish
+      -> 422 last_super_admin
+    - bootstrap super: admin_users bo'sh bo'lsa admin.telegram_id birinchi
+      login'da super sifatida yaratiladi.
+
+6.4. Media upload
+
+  POST /api.php/admin/uploads
+    - session + CSRF
+    - JPEG, PNG, WebP
+    - hajm <= 2 MB
+    - o'lcham 16..8000 px
+    - getimagesize + finfo tekshiruvi
+    - random 32 hex nom
+    - files/uploads/ papkasiga yoziladi
+    - javob: { url: "/files/uploads/<random>.<ext>", bytes }
+    - audit: upload_created
+
+  files/uploads/.htaccess:
+    - Options -Indexes -ExecCGI
+    - .php, .phtml, .phar, .phps, .cgi, .pl, .py, .sh bajarilishi taqiqlangan
+
+  Profil avatar_url va loyiha image_url shu upload orqali ham o'rnatiladi.
+  Avatar uchun alohida rasm o'lchami validatsiyasi yo'q; faqat umumiy limit.
+
+================================================================================
+7. CONTACT FORM VA INBOX
+================================================================================
+
+Forma maydonlari:
+  form_contact[ed-f-1] — ism
+  form_contact[ed-f-2] — email
+  form_contact[ed-f-3] — mavzu
+  form_contact[ed-f-4] — xabar
+  lang                — uz|en|ru
+  website             — honeypot (bo'sh bo'lishi kerak)
+
+Validatsiya:
+  - ism: 2..160 belgi (UTF-8)
+  - email: FILTER_VALIDATE_EMAIL, <= 190 bayt
+  - mavzu: 2..255 belgi (UTF-8)
+  - xabar: 2..60000 bayt
+  - website to'ldirilgan bo'lsa -> 400
+  - noto'g'ri maydon -> 422
+  - DB yozilmasa -> 503
+
+Rate limit:
+  - native contact: 5 ta / 10 daqiqa / IP
+  - barcha form ID: 10 ta / 10 daqiqa / IP
+  - oshsa -> 429
+
+Saqlash:
+  - contact_messages jadvali
+  - payload — barcha form maydonlari + attachment metadata JSON
+  - ip_hash — IP'ning hash'i (ochiq IP saqlanmaydi)
+  - user_agent — qisqartirilgan
+  - is_read — 0/1
+
+Bildirishnoma:
+  - best-effort email: admin.email manziliga `Yangi kontakt xabari: ...`
+  - best-effort Telegram: faol adminlarga (ko'pi bilan 10 ta)
+  - email/Telegram xatosi forma javobini o'zgartirmaydi
+  - contact form o'zi email yuborishni kafolatlamaydi; asosiy manba — inbox
+
+Admin inbox:
+  - GET /admin/messages?count=1 -> unread count
+  - GET /admin/messages?unread=1 -> faqat o'qilmaganlar
+  - GET/PUT/DELETE /admin/messages/{id}
+  - read/unread/delete amallari audit qilinadi
+
+Fallback:
+  - DB yoki jadval bo'lmasa forma 503 qaytaradi; frontend mailto fallback'ga
+    o'tadi.
+
+================================================================================
+8. TELEGRAM BOT
+================================================================================
+
+Bot turi:
+  - shaxsiy admin bot; public UI yo'q, CORS yo'q
+  - faqat /api.php/bot/webhook orqali ishlaydi
+  - webhook secret kamida 32 belgi
+  - Telegram `secret_token` bilan yuboriladi
+  - ruxsat admin_users.is_active=1 dan olinadi
+  - jadval bo'sh/yo'q bo'lsa admin.telegram_id bootstrap ishlaydi
+
+Command'lar:
+  /start, /help                  — yordam matni
+  /whoami                        — admin ismi, Telegram ID, email
+  /messages, /msgs               — contact inbox (oxirgi 10)
+  /unread                        — o'qilmagan contact xabarlar (10)
+  /message <id>                  — bitta contact xabarini ochish
+  /reply <id> | <matn>           — contact emailiga javob (1..5000 belgi)
+  /stats                         — unread/total xabar + faol adminlar
+  /inbox, /mail                  — IMAP inbox (oxirgi 5 xat)
+  /read <uid>                    — IMAP xatni o'qish
+  /send <email> | <mavzu> | <matn> — email yuborish
+
+Per-admin rate limit (1 daqiqa):
+  /messages  20
+  /unread    20
+  /message   30
+  /reply     10
+  /inbox     10
+  /read      20
+  /send      10
+  /stats, /whoami, /help — alohida limit yo'q
+
+Idempotentlik:
+  - har bir update_id bot_updates_seen ga yoziladi
+  - takroriy update qayta bajarilmaydi
+  - 7 kundan eski update yozuvlari tozalanadi
+  - bot_rate_limit 1 kundan eski yozuvlari tozalanadi
+
+IMAP:
+  - host: panel2.eskiz.uz
+  - port: 993, SSL
+  - user: admin@otaboyev-sardorbek.uz
+  - imap extension bo'lmasa bot email funksiyalari ishlamaydi, lekin
+    webhook va contact inbox ishlashda davom etadi
+
+Email:
+  - bot_send_email() umumiy admin_mail_send() orqali ishlaydi
+  - Reply-To ishlaydi
+  - bot token, OTP, email paroli Telegram'ga yuborilmaydi
+
+Health:
+  GET /api.php/bot/health
+  -> { configured, webhook_secret, imap, database } booleanlari
+  - configured   : token va admin_id mavjud
+  - webhook_secret: >= 32 belgi
+  - imap         : host va parol mavjud
+  - database     : MySQL SELECT 1 ishlaydi
+
+Xatolar:
+  - bot_alert_admin bir xil xabarni 15 daqiqada bir marta yuboradi
+  - DB uzilishida bot guard jadvallari ishlamasa ham bot lock bo'lmaydi
+
+================================================================================
+9. MA'LUMOTLAR BAZASI
+================================================================================
+
+DB turi        : MySQL / InnoDB
+Charset        : utf8mb4, utf8mb4_unicode_ci
+Jadvallar      : 12 ta
+Foreign key    : 5 ta
+Asosiy jadval  : profiles (id=1)
+
+9.1. Jadvalar
+
+  profiles
+    id, name, email, github, telegram, telegram_handle, avatar_url,
+    updated_at
+    PK: id
+    Izoh: bitta profil (id=1).
+
+  profile_translations
+    profile_id, lang, role, bio, quick_text, location
+    PK: (profile_id, lang)
+    FK: profile_id -> profiles.id ON DELETE CASCADE
+    Lang: uz, en, ru.
+
+  projects
+    id, slug, category, repo_url, demo_url, image_url, sort_order,
+    is_active, created_at, updated_at
+    PK: id
+    UNIQUE: slug
+    INDEX: idx_projects_active_sort (is_active, sort_order)
+
+  project_translations
+    project_id, lang, tag, title, summary, description, tech, results,
+    stack_notes
+    PK: (project_id, lang)
+    FK: project_id -> projects.id ON DELETE CASCADE
+    tech/results/stack_notes — JSON matn (TEXT), PHP'da json_decode.
+
+  contact_messages
+    id, form_id, locale, name, email, subject, message, payload, ip_hash,
+    user_agent, is_read, created_at
+    PK: id
+    INDEX: idx_contact_messages_unread (is_read, created_at)
+    INDEX: idx_contact_messages_created (created_at)
+    INDEX: idx_contact_messages_ip (ip_hash, created_at)
+    payload — JSON: maydonlar + attachment metadata.
+
+  admin_users
+    id, telegram_id, email, display_name, telegram_username, is_active,
+    role, last_login_at, created_at, updated_at
+    PK: id
+    UNIQUE: telegram_id
+    INDEX: idx_admin_users_active (is_active)
+    INDEX: idx_admin_users_role (role)
+    role: 'super' yoki 'admin'
+
+  admin_login_challenges
+    id, admin_id, challenge_hash, code_hash, email, attempts, expires_at,
+    consumed_at, ip_hash, created_at
+    PK: id
+    UNIQUE: challenge_hash
+    INDEX: (admin_id, created_at), (expires_at)
+    FK: admin_id -> admin_users.id ON DELETE CASCADE
+
+  admin_sessions
+    id, admin_id, token_hash, expires_at, last_seen_at, ip_hash,
+    user_agent, created_at
+    PK: id
+    UNIQUE: token_hash
+    INDEX: admin_id, expires_at
+    FK: admin_id -> admin_users.id ON DELETE CASCADE
+
+  admin_auth_events
+    id, event_type, telegram_id, ip_hash, created_at
+    PK: id
+    INDEX: (event_type, created_at), (telegram_id, created_at)
+
+  admin_audit_log
+    id, admin_id, action, entity, entity_id, ip_hash, details, created_at
+    PK: id
+    INDEX: (admin_id, created_at), (action, created_at)
+    FK: admin_id -> admin_users.id ON DELETE SET NULL
+
+  bot_updates_seen
+    update_id, seen_at
+    PK: update_id
+    INDEX: seen_at
+
+  bot_rate_limit
+    id, admin_id, command, created_at
+    PK: id
+    INDEX: (admin_id, command, created_at)
+
+9.2. Seed kontenti
+
+  database/seed.sql:
+    - 1 ta profiles qatori
+    - 3 ta profile_translations (uz, en, ru)
+    - 3 ta projects: gitinsight, service-platform, telegram-ops
+    - 9 ta project_translations (3 loyiha x 3 til)
+    - Jami 16 qator
+
+  seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
+  u mavjud admin tahrirlarini bosib ketadi.
+
+9.3. Migratsiyalar
+
+  database/schema.sql                  — to'liq sxema (yangi baza)
+  database/seed.sql                    — standart kontent
+  database/migrate-project-sections.sql — results, stack_notes
+  database/migrate-contact-messages.sql — contact_messages + IP indeks
+  database/migrate-bot-guards.sql       — bot_updates_seen, bot_rate_limit
+  database/migrate-admin-role.sql       — admin_users.role + indeks
+  database/migrate-project-media.sql    — projects.image_url
+
+  Barcha migratsiyalar idempotent: information_schema gate bilan ALTER
+  qilinadi; qayta import xavfsiz. CI ularni ikki marta yuritadi.
+
+  Production DB user:
+    SELECT, INSERT, UPDATE, DELETE (least privilege).
+    CREATE/ALTER/DROP faqat migratsiya vaqtida vaqtincha qo'shiladi.
+
+================================================================================
+10. KONFIGURATSIYA
+================================================================================
+
+10.1. Konfiguratsiya manbalari
+
+  config.local.php        — asosiy maxfiy config (gitignored, mode 600)
+  config.local.example.php— namuna (maxfiy qiymatlarsiz)
+  .env.example            — env namunalari
+  DB_* env                — DB sozlamalari
+  ADMIN_* / MAIL_* / SMTP_* / RESEND_* / BREVO_* env — admin/mail
+  API_TOKEN, SITEHUB_API_TOKEN, OTABOYEV_API_TOKEN — tokenli endpoint
+  APP_ENV                 — production / local / development / test
+  SITE_URL                — canonical domen
+
+10.2. DB sozlamalari
+
+  host, port, name, user, pass, socket
+  Env: DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASS, DB_SOCKET
+  Productionda config.local.php yoki DB_* env ishlatiladi.
+
+10.3. Admin sozlamalari
+
+  site_url
+  app_env
+  app_secret               — 64 hex (HMAC uchun)
+  telegram_bot_token
+  telegram_bot_username
+  telegram_id
+  email
+  phone                    — hozircha faqat configda
+  session_ttl              — default 43200
+  idle_ttl                 — default 1800
+  challenge_ttl            — default 600
+  otp_max_attempts         — default 5
+  telegram_auth_window     — default 300
+  trust_proxy              — default false
+
+  Auth `enabled` bo'lishi uchun:
+    - SITE_URL to'g'ri (productionda HTTPS)
+    - app_secret 64 hex
+    - mail driver ishlaydigan
+    - bot token formati to'g'ri
+    - bot username 3..64
+    - telegram_id 5..20 raqam
+    - admin email valid
+
+10.4. Bot sozlamalari
+
+  webhook_secret           — >= 32 belgi
+  imap_host                — panel2.eskiz.uz
+  imap_port                — 993
+  imap_user                — admin@otaboyev-sardorbek.uz
+  imap_pass
+  imap_ssl                 — true
+
+10.5. Mail sozlamalari
+
+  driver                   — mail | smtp | resend | brevo | log
+  from, from_name
+  smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass
+  resend_api_key
+  brevo_api_key
+  log_file                 — faqat local/test
+
+  `log` driver productionda o'chirilgan. OTP qatorida `code=` markeri
+  faqat local log driverda bo'ladi.
+
+10.6. Maxfiy fayllar
+
+  Quyidagilar git'ga commit qilinmaydi va web'dan yopilgan:
+    - config.local.php
+    - config.local.js
+    - github_keys.txt
+    - server_keys.txt
+    - .env*
+    - database/ (web'dan)
+    - backend/ (web'dan)
+
+  build `out/` ichiga config.local.php, config.local.js, github_keys.txt,
+  server_keys.txt yoki database/ ni hech qachon qo'shmaydi.
+
+================================================================================
+11. FAYL JOYLASHUVI
+================================================================================
+
+11.1. Ildiz (asosiy)
+
+  AGENTS.md                  — yagona instruction fayl
+  README.md                  — deploy, Apache/Nginx, API token
+  SECURITY.md                — xavfsizlik nazorati va cPanel checklist
+  tz.md                      — joriy holat va backlog
+  tz_master.md               — uzoq muddatli reja/arxitektura
+  system_info.txt            — shu hujjat
+  package.json               — scriptlar va dependencies
+  package-lock.json          — lockfile
+  next.config.js             — static export sozlamalari
+  api.php                    — PHP API kirish nuqtasi
+  .htaccess                  — Apache routing/security/cache
+  sitemap.xml                — 18 URL
+  favicon.svg
+  index.html                 — root redirect fallback
+  run_local.sh               — lokal preview
+  stop_local.sh
+  run_server.sh              — server preview
+  stop_server.sh
+  config.local.example.php   — config namunasi
+  .env.example
+  .gitignore
+  CodeAnalyzer_v2.py         — repo ishiga aloqasi yo'q, commit qilinmagan
+
+11.2. Frontend
+
+  app/
+    (redirect)/
+      layout.js
+      page.js                — til aniqlash + redirect
+    (site)/[locale]/
+      layout.js              — <html lang>, LOCALES
+      page.js                — home metadata + JSON-LD
+      privacy/page.js        — maxfiylik siyosati
+      projects/page.js       — loyihalar ro'yxati
+      projects/[slug]/page.js— 3 statik detail + metadata
+      projects/view/page.js  — admin slug fallback
+    admin/
+      layout.js
+      page.js                — Telegram login
+      verify/page.js         — OTP
+      dashboard/page.js      — protected panel
+
+  components/
+    Home.jsx
+    ProjectsPage.jsx
+    ProjectDetail.jsx
+    JsonLd.jsx
+    admin/
+      Dashboard.jsx
+      ProfileEditor.jsx
+      ProjectManager.jsx
+      MessageInbox.jsx
+      AdminManager.jsx
+      api.js
+
+  content/
+    locales.js               — uz/en/ru matnlari, projectDetails, labels
+
+  css/
+    portfolio.css            — global sayt CSS
+    admin.css                — admin CSS
+    custom.261016194537.css  — legacy Sitejet, build'ga kirmaydi
+
+  js/
+    portfolio.js             — legacy, build'ga kirmaydi
+
+  public/
+    robots.txt
+    manifest.webmanifest
+    og/og-uz.png
+    og/og-en.png
+    og/og-ru.png
+
+11.3. Backend
+
+  backend/
+    config.php               — DB/admin/mail/bot config
+    content.php              — public content API
+    contact.php              — contact form + inbox + email notify
+    admin.php                — admin auth/session/CSRF/CRUD/upload/sitemap
+    mailer.php               — mail drivers
+    bot.php                  — Telegram webhook + IMAP + email
+
+11.4. Baza va migratsiyalar
+
+  database/
+    schema.sql
+    seed.sql
+    migrate-project-sections.sql
+    migrate-contact-messages.sql
+    migrate-bot-guards.sql
+    migrate-admin-role.sql
+    migrate-project-media.sql
+    .htaccess                — web'dan yopish
+
+11.5. Skriptlar va testlar
+
+  scripts/
+    copy-static.mjs          — postbuild nusxalash
+    check-export.mjs         — build artefakt tekshiruvi
+    php-server-router.php    — PHP built-in server router
+    production-ops.sh        — migrate/build/deploy/cron/logs/maildns/verify
+    set-bot-commands.sh      — Telegram setMyCommands
+
+  tests/
+    bot-guard-test.php       — 47 ta bot guard testi (Telegramga chiqmaydi)
+
+  files/
+    sardorbek-otaboyev-cv-uz.txt / .pdf
+    sardorbek-otaboyev-cv-ru.txt / .pdf
+    sardorbek-otaboyev-cv-en.txt / .pdf
+    uploads/                 — admin yuklagan rasmlar
+      .htaccess              — PHP/CGI bajarilishini taqiqlaydi
+
+11.6. Legacy / Sitejet artefaktlari
+
+  {uz,en,ru}/projects/<slug>/index.html — tarixiy nusxalar; out/ ga
+                                            ko'chirilmaydi va servis qilinmaydi
+  en/*                                  — eski Sitejet sahifalari; out/ ga
+                                            kirmaydi, sitemap'da yo'q
+  css/custom.*.css                      — legacy CSS; build'ga kirmaydi
+  webcard/, bundles/, g/fonts/, images/ — tegilmagan Sitejet artefaktlari
+  js/portfolio.js                       — legacy JS; build'ga kirmaydi
+
+11.7. Build artefakti
+
+  out/
+    index.html
+    404.html
+    _not-found/
+    uz/, en/, ru/                         — home, projects, privacy, detail
+    admin/                                — 3 sahifa
+    api.php
+    backend/
+    .htaccess
+    files/
+    js/
+    css/
+    favicon.svg
+    robots.txt
+    sitemap.xml
+    manifest.webmanifest
+    og/
+    _next/                                — Next static chunk'lar
+
+  out/ gitignored. config.local.php, database/, github_keys.txt,
+  server_keys.txt va legacy CSS/JS out/ ichida bo'lmaydi.
+
+================================================================================
+12. BUILD, EXPORT VA DEPLOY
+================================================================================
+
+12.1. Lokal build
+
+  npm ci
+  npm run check
+  npm run build
+
+  `npm run build`:
+    1) next build (static export)
+    2) postbuild: scripts/copy-static.mjs
+    3) postbuild: scripts/check-export.mjs
+
+  copy-static.mjs nusxalaydi:
+    - files/ -> out/files
+    - js/ -> out/js
+    - css/ -> out/css
+    - favicon.svg
+    - api.php
+    - backend/
+    - .htaccess
+    - sitemap.xml
+
+  copy-static.mjs chiqarib tashlaydi:
+    - config.local.php / config.local.js (agar out'da qolgan bo'lsa o'chiradi)
+    - css/custom.*.css
+    - js/portfolio.js
+    - database/ (umuman nusxalanmaydi)
+
+  sitemap lastmod:
+    - home va listing URL'lar build sanasi bilan yangilanadi
+    - detail URL'lar DB'dagi updated_at'dan (admin panel saqlaganda)
+
+12.2. Export tekshiruvi
+
+  scripts/check-export.mjs tekshiradi:
+    - index.html, 404.html, api.php, .htaccess, robots.txt, sitemap.xml
+    - admin/index.html
+    - og/og-uz.png, og/og-en.png, og/og-ru.png
+    - config.local.php, config.local.js, github_keys.txt, server_keys.txt
+      out'da yo'qligi
+    - database/ out'da yo'qligi
+    - legacy CSS va legacy JS out'da yo'qligi
+    - robots.txt canonical sitemap'ga ishora qilishi
+    - sitemap >= 18 URL
+    - uz/index.html canonical, hreflang en, og:image, twitter:card,
+      application/ld+json va /og/og-uz.png markerlari
+
+12.3. Preview
+
+  ./run_local.sh
+    APP_ENV=local, default 127.0.0.1:8000
+    PHP built-in server + scripts/php-server-router.php
+    out/ yo'q bo'lsa avtomatik build qiladi
+
+  ./run_server.sh
+    APP_ENV=production, default 127.0.0.1:8081
+
+  To'xtatish:
+    ./stop_local.sh
+    ./stop_server.sh
+
+  Eslatma: PHP built-in server .htaccess o'qimaydi. Rewrite/redirect va
+  403/404 xatti-harakatini Apache'da alohida tekshirish kerak.
+
+12.4. Production deploy (cPanel)
+
+  1) cPanel MySQL baza va user yaratish
+  2) config.local.php yozish (yoki DB_* env berish)
+  3) npm ci && npm run build
+  4) out/ tarkibini web rootga joylash
+  5) config.local.php ni web rootga alohida mode 600 bilan qo'yish
+  6) migratsiyalarni import qilish
+  7) files/uploads/ va sitemap.xml yoziladigan bo'lishi
+
+  `scripts/production-ops.sh deploy`:
+    - build (SKIP_BUILD=1 bo'lmasa)
+    - check_build: out/api.php, out/404.html borligi; out ichida secret yoki
+      database/ yo'qligi
+    - web root snapshot oladi (config.local.php va .well-known/ saqlanadi)
+    - out/ ni tar bilan web rootga chiqaradi
+    - config.local.php ni qayta qo'yadi, mode 600
+    - papkalar 755, fayllar 644
+
+  Production talablari:
+    - HTTPS
+    - haqiqiy MySQL
+    - APP_SECRET (64 hex)
+    - Telegram bot token/username/ID
+    - email sozlamalari
+    - PHP 7.1+ (pdo_mysql, curl, openssl, mbstring, imap)
+    - Apache mod_rewrite + mod_headers
+
+  Nginx uchun .htaccess ishlamaydi: try_files, rewrite va
+  error_page 404 /404.html ekvivalenti kerak.
+
+12.5. Sitemap
+
+  Default 18 URL:
+    - 3 home
+    - 3 listing
+    - 9 detail (3 loyiha x 3 til)
+    - 3 privacy
+  Admin project qo'shilsa/o'chirilsa, sitemap.xml avtomatik qayta
+  generatsiya qilinadi. Yozib bo'lmasa -> 500 sitemap_write_failed va admin
+  panelida ogohlantirish.
+
+================================================================================
+13. CI — .github/workflows/ci.yml
+================================================================================
+
+Trigger:
+  - push -> main
+  - pull_request -> main
+  - concurrency: ci-${github.ref}; cancel-in-progress
+
+Permissions:
+  - contents: read
+
+Job:
+  nomi: "Lint, schema, RBAC, bot guards, build"
+  runner: ubuntu-latest
+  timeout: 20 daqiqa
+
+MySQL service:
+  image: mysql:8.0
+  database: test_portfolio
+  user: test / test
+  port: 3306
+  health check: mysqladmin ping
+
+Qadamlar:
+  1) Checkout
+  2) Setup PHP 8.2
+     extensions: pdo_mysql, curl, openssl, mbstring, imap
+  3) Setup Node 22 + npm cache
+  4) npm ci
+  5) npm audit --omit=dev --audit-level=high
+  6) npm run check
+     - php -l: api.php, backend/*.php, router, bot test
+     - node --check: js/portfolio.js, copy-static.mjs, check-export.mjs
+     - bash -n: run/stop skriptlari, production-ops, set-bot-commands
+  7) Statik RBAC/bot guard tekshiruvlari:
+     - majburiy fayllar (media migration, uploads .htaccess, privacy)
+     - schema.sql'da role va idx_admin_users_role
+     - admin_require_super, last_super_admin
+     - bot_find_admin, bot_notify_admins, bot_audit, bot_rate_limit_ok
+     - bot_health / bot_handle_health
+     - contact.php'da bot_notify_admins
+     - set-bot-commands.sh'da setMyCommands
+     - .htaccess'da HSTS faqat HTTPS shartida
+  8) MySQL kutish
+  9) schema + seed + bot guards import
+ 10) admin_users.role ustunini tekshirish
+ 11) Bot guards migration idempotentligi (ikki marta)
+ 12) Admin-role migration legacy-shaped DB'da + ikki marta
+ 13) Project-sections migration legacy-shaped DB'da + ikki marta
+ 14) Project-media migration legacy-shaped DB'da (ustun drop) + ikki marta
+ 15) Contact-messages migration idempotentligi
+ 16) Last-super guard SQL testi
+ 17) tests/bot-guard-test.php (real DB, Telegramga chiqmaydi)
+ 18) npm run build
+ 19) Export artefakti secret-free tekshiruvi:
+     - out/api.php, out/.htaccess, out/404.html, out/admin/
+     - out/uz|en|ru/privacy/
+     - out/files/uploads/.htaccess
+     - out/sitemap.xml'da /uz/privacy/
+     - scripts/check-export.mjs
+ 20) Fail bo'lsa artifacts yuklash (ci-failures)
+
+Lokal CI-ekvivalent natijasi (2026-10-24):
+  - npm ci + npm audit -> 0 vulnerability
+  - npm run check -> OK
+  - MySQL 8.0 (Docker): schema+seed, barcha migratsiyalar x2, media
+    migration legacy-drop x2 -> OK
+  - tests/bot-guard-test.php -> 47/47 PASS
+  - npm run build + check:export -> OK, 27 sahifa
+  - statik guardlar + git diff --check -> OK
+
+Eslatma: `gh` CLI tokeni 401 bo'lgani uchun GitHub Actions natijasi lokal
+muhitdan o'qilmagan. Repo -> Actions bo'limida job holatini tekshirish kerak.
+
+================================================================================
+14. OPERATSION JARAYONLAR
+================================================================================
+
+14.1. production-ops.sh
+
+  ./scripts/production-ops.sh migrate
+    - barcha 5 migratsiyani idempotent import qiladi
+    - bot guard jadvallarini, admin role ustunini va contact IP indeksini
+      tekshiradi
+
+  ./scripts/production-ops.sh build
+    - Node 22 enable
+    - npm ci --no-audit --no-fund
+    - npm run check
+    - npm run build
+
+  ./scripts/production-ops.sh deploy
+    - build + check_build + snapshot + tar deploy
+    - config.local.php va .well-known/ saqlanadi
+
+  ./scripts/production-ops.sh cron
+    - kunlik backup (03:10)
+    - 5 daqiqalik monitor
+    - cron yozuvlari tag bilan yangilanadi (dublikat yo'q)
+
+  ./scripts/production-ops.sh logs
+    - user-level logrotate
+    - haftalik, 8 rotate, compress
+
+  ./scripts/production-ops.sh maildns
+    - SPF, DKIM (default._domainkey / mail._domainkey), DMARC tekshiruvi
+    - resolver default 1.1.1.1
+
+  ./scripts/production-ops.sh verify
+    - health, bot health, 3 home, listing, detail
+    - /de/ -> 404
+    - config.local.php, backend/, database/ -> 403
+    - sitemap >= 15 URL
+    - admin auth enabled
+    - bot configured, webhook_secret, database
+
+  ./scripts/production-ops.sh all
+    - migrate + deploy + logs + cron + verify
+
+14.2. Backup
+
+  Joy: ~/backups/otaboyev-sardorbek.uz (default)
+  Vaqt: har kuni 03:10
+  Tarkib:
+    - db-<stamp>.sql.gz  (mysqldump --single-transaction --quick)
+    - web-<stamp>.tar.gz (web root; config.local.php chiqarib tashlanadi)
+  Saqlash:
+    - db va web arxivlari 14 kun
+    - web snapshot papkalari 3 kun
+  Ruxsat: BACKUP_DIR 700, skript 700
+  Log: ~/logs/backup.log
+
+  Hozirgi holat: backup lokal diskda. Shifrlangan offsite backup (age/GPG +
+  rclone/S3) hali sozlanmagan; credential talab qiladi.
+
+14.3. Monitoring
+
+  Har 5 daqiqada:
+    - /api.php/health -> 200 bo'lmasa Telegram alert
+    - disk >= 90% -> alert
+    - TLS sertifikat < 14 kun -> alert
+    - /api.php/bot/health:
+        configured, webhook_secret, imap, database
+    - Telegram getWebhookInfo.pending_update_count > 5 -> alert
+    - tiklanishda "yana ishlayapti" xabari
+  State fayllar: monitor.state, bot.state, bot-secret.state, db.state
+  Log: ~/logs/monitor.log
+
+14.4. Email/DNS
+
+  Production mailbox'lar:
+    - admin@otaboyev-sardorbek.uz     — OTP va inbox
+    - no-reply@otaboyev-sardorbek.uz  — yuborish
+    - contact@... -> admin@... forwarder
+  IMAP: panel2.eskiz.uz:993/imap/ssl
+  Eslatma: mail.otaboyev-sardorbek.uz sertifikati hostname'ga mos emas;
+  shuning uchun panel2.eskiz.uz ishlatiladi.
+
+  DNS holati (2026-10-22):
+    - SPF: pass
+    - DKIM: external DNS'da yo'q; Exim hozir imzolamaydi
+    - DMARC: v=DMARC1; p=none;
+  DKIM/DMARC'ni yakunlash uchun cPanel/WHM yoki Eskiz DNS access kerak.
+
+================================================================================
+15. XAVFSIZLIK NAZORATLARI
+================================================================================
+
+Autentifikatsiya:
+  - Telegram Login HMAC + auth_date
+  - email OTP (6 raqam, 10 daqiqa, 5 urinish)
+  - session token hash (ochiq token DB'da saqlanmaydi)
+  - challenge token hash + code HMAC
+  - CSRF token har mutation'da
+  - Origin/Referer strict host/scheme/port
+  - Origin: null rad etiladi
+  - header bo'lmasa X-Requested-With: XMLHttpRequest talab qilinadi
+  - SameSite=Strict session cookie; SameSite=Lax challenge cookie
+  - HttpOnly; Secure faqat HTTPS'da
+  - idle timeout + absolute TTL
+  - logout-all
+
+Avtorizatsiya:
+  - admin_users.role: super / admin
+  - admin_lookup_session har safar DB'dan rolni oladi
+  - super bo'lmagan admin /admin/admins* -> 403
+  - last super admin himoyasi -> 422
+  - bot ruxsati is_active=1 bilan bir xil
+
+Ma'lumotlar:
+  - PDO prepared statements
+  - UTF-8 belgi bo'yicha uzunlik (VARCHAR limitlari uchun)
+  - TEXT maydonlar bayt limitida
+  - IP hash (ochiq IP emas)
+  - payload JSON
+  - audit log: login, logout, profile, project, upload, admin role, sitemap
+  - auth events: challenge, OTP fail, unauthorized, rate limit
+
+HTTP:
+  - CSP: default-src 'self'; Telegram widget va api.github.com ruxsat
+  - HSTS: max-age 31536000, faqat HTTPS; includeSubDomains/preload yo'q
+  - X-Frame-Options: DENY
+  - X-Content-Type-Options: nosniff
+  - Referrer-Policy: strict-origin-when-cross-origin
+  - Permissions-Policy: geolocation/microphone/camera/payment/usb off
+  - COOP: same-origin-allow-popups
+  - CORP: same-origin
+  - X-Permitted-Cross-Domain-Policies: none
+  - X-Powered-By va Server olib tashlanadi
+  - API display_errors=0, log_errors=1
+  - admin URL'lariga X-Robots-Tag: noindex, nofollow
+  - .htaccess config/backend/database/app/components/content/scripts/
+    node_modules va .sql/.log/.bak/.md fayllarni yopadi
+  - hidden fayllar 403; .well-known istisno
+
+Upload:
+  - MIME + getimagesize + finfo
+  - hajm/o'lcham limiti
+  - random nom
+  - uploads papkada PHP/CGI bajarilmaydi
+  - audit
+
+Bot:
+  - webhook secret >= 32
+  - faqat POST
+  - body limit 131072
+  - update_id idempotentligi
+  - per-admin rate limit
+  - token/OTP/parol Telegram'ga chiqmaydi
+
+================================================================================
+16. SEO, PWA VA KESH
+================================================================================
+
+SEO:
+  - canonical + hreflang: 18 sahifa (home, listing, detail, privacy)
+  - x-default -> /uz/
+  - Open Graph: title, description, image, locale, site_name
+  - Twitter card: summary_large_image
+  - JSON-LD:
+      home    -> Person + WebSite
+      detail  -> CreativeWork + author
+  - sitemap.xml: 18 URL, changefreq/priority
+  - robots.txt: Sitemap: https://otaboyev-sardorbek.uz/sitemap.xml
+  - admin noindex
+  - 404.html haqiqiy 404
+  - OG rasmlar: 1200x630, 3 til
+
+PWA:
+  - public/manifest.webmanifest
+  - favicon.svg
+  - theme-color meta
+
+Kesh:
+  - HTML: no-cache, no-store, must-revalidate
+  - CSS/JS: 5 daqiqa, must-revalidate
+  - rasm/font: 1 yil, immutable
+  - GitHub API: localStorage 15 daqiqa
+  - API: no-store (form/admin/session)
+  - admin va API javoblarida CORS yo'q
+
+Performance:
+  - statik export; server-side render yo'q
+  - Next static chunks
+  - legacy 900 KB CSS va legacy JS build'dan chiqarilgan
+  - GitHub bo'limi tashqi API'ga bog'liq; token yo'q, rate limit bor;
+    offline fallback xato emas
+
+================================================================================
+17. CHEKLOVLAR VA MA'LUM HOLATLAR
+================================================================================
+
+1) Project detail statik HTML — build vaqtidagi fallback. Admin tahriri
+   API fetch'dan keyin ko'rinadi; SEO/crawler uchun to'liq yangi matn olishda
+   rebuild kerak.
+
+2) Admin yaratgan yangi slug uchun statik sahifa yo'q:
+   - Apache: /{locale}/projects/view/?slug=... ga internal rewrite
+   - PHP preview router: 302 bilan fallback
+   - ikkalasi ham client fetch'dan keyin ishlaydi
+
+3) Generic detail route metadata/canonical'i listing'ga ishora qiladi;
+   client JS keyin haqiqiy URL'ga yangilaydi.
+
+4) {uz,en,ru}/projects/<slug>/index.html legacy nusxalari repo'da qoladi,
+   lekin out/ da servis qilinmaydi; ularni tahrirlash saytga ta'sir qilmaydi.
+
+5) en/* legacy Sitejet sahifalari uz/ru muqobilisiz; out/ ga kirmaydi va
+   sitemap'da yo'q. Ulardagi canonical domeni xato.
+
+6) Contact form native handler DB'ga yozadi; DB yoki contact_messages
+   bo'lmasa 503 va frontend mailto fallback. Contact form email yuborishni
+   kafolatlamaydi; contact@ forwarder va admin inbox asosiy manba.
+
+7) Media upload bor, lekin rasm o'chirish/garbage collection va eski
+   fayllarni tozalash yo'q. Deploy'da files/uploads/ ni saqlash kerak
+   (rsync --delete ishlatilsa exclude qilish).
+
+8) Admin panel UI matnlari hozircha o'zbekcha; sayt matnlari uz/en/ru.
+
+9) GitHub bo'limi tashqi api.github.com'ga bog'liq (tokensiz, rate limit).
+   Offline fallback xato emas.
+
+10) Telegram Login Widget lokal HTTP'da ishlamaydi. BotFather'da
+    /setdomain bajarilgan, lekin haqiqiy Telegram Login va real bot update
+    testi hali tasdiqlanmagan.
+
+11) Email: SPF pass; DKIM external DNS'da yo'q; DMARC p=none. To'liq
+    yakunlash uchun provider access kerak.
+
+12) Offsite backup yo'q. Hozirgi backup lokal diskda; shifrlangan
+    offsite nusxa uchun credential kerak.
+
+13) github_keys.txt mavjud va mode 600, lekin undagi PAT hali revoke
+    qilinmagan bo'lishi mumkin. Kod uni o'qimaydi, build out/ ga
+    ko'chirmaydi, .htaccess/router HTTP'dan to'sadi.
+
+14) Legacy fayllardagi Google Maps API kalitlari 2026-10-22 da
+    REDACTED_GOOGLE_MAPS_KEY bilan almashtirilgan; ular out/ ga kirmaydi.
+    Eski kalitlar git tarixida qolgani uchun Google Cloud'da rotate/restrict
+    qilinishi kerak.
+
+15) CodeAnalyzer_v2.py repo ishiga aloqasi yo'q va ataylab commit
+    qilinmagan.
+
+================================================================================
+18. OWNER TOMONIDAN BAJARILADIGAN ISHLAR
+================================================================================
+
+Kod bilan yopilmaydigan, tashqi access talab qiladigan ishlar:
+
+  1) GitHub PAT revoke
+     - github_keys.txt (600) ichidagi token
+     - GitHub -> Settings -> Developer settings -> Personal access tokens
+     - revoke qilinmaguncha token tirik
+
+  2) Google Maps kalitlarini rotate/restrict
+     - Google Cloud Console
+     - eski kalitlarni o'chirish/rotate
+     - HTTP referrer bo'yicha restrict
+
+  3) DKIM DNS'ga chiqarish
+     - cPanel -> Email Deliverability -> DKIM enable
+     - default._domainkey TXT ni Eskiz DNS'ga qo'shish
+     - keyin DMARC'ni p=quarantine, so'ng p=reject ga kuchaytirish
+     - tekshiruv: ./scripts/production-ops.sh maildns
+
+  4) Shifrlangan offsite backup
+     - age yoki GPG bilan shifrlash
+     - rclone/S3/Backblaze'ga kunlik yuborish
+     - retention va restore testi
+     - credential bo'lmasa kod bilan yakunlab bo'lmaydi
+
+  5) Real Telegram testlari
+     - haqiqiy Telegram Login (BotFather /setdomain tasdiqlangan)
+     - haqiqiy bot update: /help, /messages, /reply, /send
+     - getWebhookInfo.pending_update_count = 0
+
+  6) Production deploy tekshiruvi
+     - mysql ... < database/migrate-project-media.sql
+     - files/uploads/ 755 va yoziladigan
+     - sitemap.xml PHP yoza oladigan
+     - Apache'da 403/404/rewrite tekshiruvi
+
+================================================================================
+19. TEKSHIRISH BUYRUQLARI
+================================================================================
+
+Sintaksis va guardlar:
+  npm run check
+
+To'liq build + export:
+  npm run build
+  npm run check:export
+
+Lokal preview:
+  APP_ENV=local SITE_URL=http://127.0.0.1:8000 \
+  DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... ./run_local.sh
+  ./stop_local.sh
+
+API health:
+  curl -s http://127.0.0.1:8000/api.php/health
+
+Content API:
+  curl -s "http://127.0.0.1:8000/api.php/profile?lang=uz"
+  curl -s "http://127.0.0.1:8000/api.php/projects?lang=uz"
+  curl -s "http://127.0.0.1:8000/api.php/projects/gitinsight?lang=uz"
+
+Admin config:
+  curl -s http://127.0.0.1:8000/api.php/admin/config
+
+Tokenli endpoint:
+  curl -H "X-Api-Token: $API_TOKEN" http://127.0.0.1:8000/api.php/websites
+
+Bot health:
+  curl -s http://127.0.0.1:8000/api.php/bot/health
+
+Bot guard testlari (Telegramga chiqmaydi):
+  DB_HOST=127.0.0.1 DB_NAME=test_portfolio DB_USER=root DB_PASS='' \
+  php tests/bot-guard-test.php
+  (yoki DB_SOCKET=...)
+
+Migratsiyalar (yangi baza):
+  mysql -u USER -p DB_NAME < database/schema.sql
+  mysql -u USER -p DB_NAME < database/seed.sql
+
+Migratsiyalar (eski baza, idempotent):
+  mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
+  mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
+  mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
+  mysql -u USER -p DB_NAME < database/migrate-admin-role.sql
+  mysql -u USER -p DB_NAME < database/migrate-project-media.sql
+
+Production ops:
+  ./scripts/production-ops.sh migrate
+  ./scripts/production-ops.sh build
+  ./scripts/production-ops.sh deploy
+  ./scripts/production-ops.sh cron
+  ./scripts/production-ops.sh logs
+  ./scripts/production-ops.sh maildns
+  ./scripts/production-ops.sh verify
+  ./scripts/production-ops.sh all
+
+Git tekshiruvi:
+  git diff --check
+  git status --short
+
+================================================================================
+20. YAKUNIY XULOSA
+================================================================================
+
+otaboyev-sardorbek.uz — Next.js statik frontend, PHP 7.1+ backend va MySQL
+bazasidan iborat 3 tilli portfolio tizimi. Tizimning kuchli tomonlari:
+
+  - statik export orqali tez va arzon hosting
+  - DB bo'lmasa ham ishlaydigan statik fallback
+  - 3 tilli kontent va SEO (canonical, hreflang, OG, JSON-LD, sitemap)
+  - Telegram + email OTP bilan himoyalangan admin panel
+  - super/admin RBAC va last-super himoyasi
+  - contact inbox + email + Telegram bildirishnoma
+  - alohida shaxsiy Telegram email bot
+  - media upload va xavfsiz uploads papkasi
+  - CI: lint, migratsiya idempotentligi, RBAC/bot guard, 47 test, build
+  - kunlik backup, 5 daqiqalik monitoring, TLS/disk/bot health alertlari
+  - CSP/HSTS/COOP/CORP va qat'iy CORS siyosati
+
+Asosiy cheklov — statik detail sahifalar build vaqtidagi fallback; admin
+tahrirlari API orqali ko'rinadi, SEO uchun rebuild kerak. Qolgan muhim
+ishlar (PAT revoke, Google Maps rotate, DKIM/DMARC, offsite backup, real
+Telegram testlari) owner/tashqi access talab qiladi.
+
+================================================================================
+HUJJAT OXIRI
+================================================================================
