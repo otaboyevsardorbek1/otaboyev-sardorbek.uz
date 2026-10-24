@@ -569,6 +569,18 @@ button {
   line-height: 1.5;
 }
 
+.admin-file-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.admin-file-row input[type="file"] {
+  font-size: 12px;
+  color: var(--admin-muted);
+}
+
 .admin-locale-tabs button small {
   color: var(--admin-muted);
   font-size: 0.58rem;

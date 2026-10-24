@@ -108,7 +108,7 @@ try {
 
     if ($requestPath === '/projects') {
         $statement = $pdo->prepare(
-            'SELECT pr.slug, pr.category, pr.repo_url, pr.demo_url,
+            'SELECT pr.slug, pr.category, pr.repo_url, pr.demo_url, pr.image_url,
                     COALESCE(t.tag, u.tag) AS tag,
                     COALESCE(t.title, u.title) AS title,
                     COALESCE(t.summary, u.summary) AS summary,
@@ -145,7 +145,7 @@ try {
 
     if (preg_match('#^/projects/([a-z0-9-]{1,80})/?$#', $requestPath, $matches)) {
         $statement = $pdo->prepare(
-            'SELECT pr.slug, pr.category, pr.repo_url, pr.demo_url,
+            'SELECT pr.slug, pr.category, pr.repo_url, pr.demo_url, pr.image_url,
                     COALESCE(t.tag, u.tag) AS tag,
                     COALESCE(t.title, u.title) AS title,
                     COALESCE(t.summary, u.summary) AS summary,
@@ -179,6 +179,7 @@ try {
                 'stack_notes' => content_list($row['stack_notes']),
                 'repo_url' => $row['repo_url'],
                 'demo_url' => $row['demo_url'],
+                'image_url' => $row['image_url'],
                 'detail_url' => '/' . $lang . '/projects/' . rawurlencode($row['slug']) . '/',
             ),
             200

@@ -242,6 +242,9 @@ function admin_lookup_session($pdo, $touch)
         return null;
     }
 
+    $config = admin_config();
+    $idleCutoff = gmdate('Y-m-d H:i:s', time() - (int) $config['idle_ttl']);
+
     $statement = $pdo->prepare(
         'SELECT s.id AS session_id, s.admin_id, s.expires_at, s.last_seen_at,
                 a.telegram_id, a.email, a.display_name, a.telegram_username,
@@ -250,10 +253,14 @@ function admin_lookup_session($pdo, $touch)
          INNER JOIN admin_users a ON a.id = s.admin_id
          WHERE s.token_hash = :token_hash
            AND s.expires_at > UTC_TIMESTAMP()
+           AND s.last_seen_at > :idle_cutoff
            AND a.is_active = 1
          LIMIT 1'
     );
-    $statement->execute(array(':token_hash' => admin_session_hash($token)));
+    $statement->execute(array(
+        ':token_hash' => admin_session_hash($token),
+        ':idle_cutoff' => $idleCutoff,
+    ));
     $row = $statement->fetch();
     if (!$row) {
         return null;
@@ -814,6 +821,79 @@ function admin_handle_logout($pdo)
     admin_respond(array('logged_out' => true), 200);
 }
 
+function admin_handle_logout_all($pdo)
+{
+    admin_require_method('POST');
+    $session = admin_require_session($pdo);
+    admin_require_csrf($session);
+    $statement = $pdo->prepare('DELETE FROM admin_sessions WHERE admin_id = :admin_id');
+    $statement->execute(array(':admin_id' => $session['row']['admin_id']));
+    admin_clear_cookie(ADMIN_SESSION_COOKIE, 'Strict');
+    admin_audit($pdo, $session['row']['admin_id'], 'logout_all', 'admin', $session['row']['admin_id'], null);
+    admin_respond(array('logged_out' => true), 200);
+}
+
+function admin_handle_upload($pdo)
+{
+    admin_require_method('POST');
+    $session = admin_require_session($pdo);
+    admin_require_csrf($session);
+
+    if (!isset($_FILES['file']) || !is_array($_FILES['file'])) {
+        admin_fail('No file uploaded', 'upload_missing', 422);
+    }
+    $file = $_FILES['file'];
+    if (!empty($file['error']) && (int) $file['error'] !== UPLOAD_ERR_OK) {
+        admin_fail('Upload failed', 'upload_failed', 422);
+    }
+    $size = isset($file['size']) ? (int) $file['size'] : 0;
+    if ($size <= 0 || $size > 2 * 1024 * 1024) {
+        admin_fail('Image must be up to 2 MB', 'upload_too_large', 422);
+    }
+    if (!isset($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+        admin_fail('Upload failed', 'upload_failed', 422);
+    }
+
+    $info = @getimagesize($file['tmp_name']);
+    $allowed = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp');
+    $mime = (is_array($info) && !empty($info['mime'])) ? strtolower((string) $info['mime']) : '';
+    if (!isset($allowed[$mime])) {
+        admin_fail('Only JPEG, PNG or WebP images are allowed', 'upload_invalid_type', 422);
+    }
+    $width = isset($info[0]) ? (int) $info[0] : 0;
+    $height = isset($info[1]) ? (int) $info[1] : 0;
+    if ($width < 16 || $height < 16 || $width > 8000 || $height > 8000) {
+        admin_fail('Image dimensions are out of range', 'upload_invalid_type', 422);
+    }
+
+    // Double-check the payload with finfo when the extension is available.
+    if (function_exists('finfo_open')) {
+        $finfo = @finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo) {
+            $detected = @finfo_file($finfo, $file['tmp_name']);
+            @finfo_close($finfo);
+            if (is_string($detected) && strtolower($detected) !== $mime) {
+                admin_fail('Image type mismatch', 'upload_invalid_type', 422);
+            }
+        }
+    }
+
+    $dir = dirname(__DIR__) . '/files/uploads';
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+        admin_fail('Upload directory is not writable', 'upload_dir_failed', 500);
+    }
+
+    $name = bin2hex(random_bytes(16)) . '.' . $allowed[$mime];
+    $target = $dir . '/' . $name;
+    if (!@move_uploaded_file($file['tmp_name'], $target)) {
+        admin_fail('Upload failed', 'upload_failed', 500);
+    }
+    @chmod($target, 0644);
+
+    admin_audit($pdo, $session['row']['admin_id'], 'upload_created', 'file', null, array('name' => $name, 'bytes' => $size));
+    admin_respond(array('url' => '/files/uploads/' . $name, 'bytes' => $size), 201);
+}
+
 function admin_handle_session($pdo)
 {
     admin_require_method('GET');
@@ -1026,7 +1106,7 @@ function admin_handle_profile($pdo)
 function admin_project_data($pdo, $id)
 {
     $statement = $pdo->prepare(
-        'SELECT id, slug, category, repo_url, demo_url, sort_order, is_active, created_at, updated_at
+        'SELECT id, slug, category, repo_url, demo_url, image_url, sort_order, is_active, created_at, updated_at
          FROM projects WHERE id = :id LIMIT 1'
     );
     $statement->execute(array(':id' => (int) $id));
@@ -1083,6 +1163,8 @@ function admin_validate_project($input)
     if ($repoUrl === null || !admin_valid_url($repoUrl, true)) $errors['repo_url'] = 'Repository URL is invalid.';
     $demoUrl = admin_text(isset($input['demo_url']) ? $input['demo_url'] : '', 255, true);
     if ($demoUrl === null || !admin_valid_url($demoUrl, true)) $errors['demo_url'] = 'Demo URL is invalid.';
+    $imageUrl = admin_text(isset($input['image_url']) ? $input['image_url'] : '', 255, true);
+    if ($imageUrl === null || !admin_valid_url($imageUrl, true)) $errors['image_url'] = 'Image URL is invalid.';
     $sortOrder = isset($input['sort_order']) ? (int) $input['sort_order'] : 0;
     if ($sortOrder < -32768 || $sortOrder > 32767) $errors['sort_order'] = 'Sort order is out of range.';
     $isActive = !empty($input['is_active']) && (string) $input['is_active'] !== '0';
@@ -1150,6 +1232,7 @@ function admin_validate_project($input)
         'category' => $category,
         'repo_url' => $repoUrl === '' ? null : $repoUrl,
         'demo_url' => $demoUrl === '' ? null : $demoUrl,
+        'image_url' => $imageUrl === '' ? null : $imageUrl,
         'sort_order' => $sortOrder,
         'is_active' => $isActive ? 1 : 0,
         'translations' => $cleanTranslations,
@@ -1178,14 +1261,15 @@ function admin_handle_projects($pdo)
     $pdo->beginTransaction();
     try {
         $statement = $pdo->prepare(
-            'INSERT INTO projects (slug, category, repo_url, demo_url, sort_order, is_active)
-             VALUES (:slug, :category, :repo_url, :demo_url, :sort_order, :is_active)'
+            'INSERT INTO projects (slug, category, repo_url, demo_url, image_url, sort_order, is_active)
+             VALUES (:slug, :category, :repo_url, :demo_url, :image_url, :sort_order, :is_active)'
         );
         $statement->execute(array(
             ':slug' => $project['slug'],
             ':category' => $project['category'],
             ':repo_url' => $project['repo_url'],
             ':demo_url' => $project['demo_url'],
+            ':image_url' => $project['image_url'],
             ':sort_order' => $project['sort_order'],
             ':is_active' => $project['is_active'],
         ));
@@ -1262,7 +1346,7 @@ function admin_handle_project_item($pdo, $id)
     try {
         $statement = $pdo->prepare(
             'UPDATE projects SET slug = :slug, category = :category, repo_url = :repo_url,
-                    demo_url = :demo_url, sort_order = :sort_order, is_active = :is_active
+                    demo_url = :demo_url, image_url = :image_url, sort_order = :sort_order, is_active = :is_active
              WHERE id = :id'
         );
         $statement->execute(array(
@@ -1270,6 +1354,7 @@ function admin_handle_project_item($pdo, $id)
             ':category' => $clean['category'],
             ':repo_url' => $clean['repo_url'],
             ':demo_url' => $clean['demo_url'],
+            ':image_url' => $clean['image_url'],
             ':sort_order' => $clean['sort_order'],
             ':is_active' => $clean['is_active'],
             ':id' => (int) $id,
@@ -1718,6 +1803,10 @@ try {
         admin_handle_session($pdo);
     } elseif ($requestPath === '/admin/logout') {
         admin_handle_logout($pdo);
+    } elseif ($requestPath === '/admin/logout-all') {
+        admin_handle_logout_all($pdo);
+    } elseif ($requestPath === '/admin/uploads') {
+        admin_handle_upload($pdo);
     } elseif ($requestPath === '/admin/profile') {
         admin_handle_profile($pdo);
     } elseif ($requestPath === '/admin/projects') {

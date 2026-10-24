@@ -147,6 +147,7 @@ function admin_config()
         'email' => $adminEmail,
         'app_secret' => $appSecret,
         'session_ttl' => (int) admin_setting(array('ADMIN_SESSION_TTL'), 'admin', 'session_ttl', 43200),
+        'idle_ttl' => (int) admin_setting(array('ADMIN_IDLE_TTL'), 'admin', 'idle_ttl', 1800),
         'challenge_ttl' => (int) admin_setting(array('ADMIN_CHALLENGE_TTL'), 'admin', 'challenge_ttl', 600),
         'otp_max_attempts' => (int) admin_setting(array('ADMIN_OTP_MAX_ATTEMPTS'), 'admin', 'otp_max_attempts', 5),
         'auth_window' => (int) admin_setting(array('ADMIN_TELEGRAM_AUTH_WINDOW'), 'admin', 'telegram_auth_window', 300),
@@ -198,6 +199,9 @@ function admin_config()
 
     if ($config['session_ttl'] < 900 || $config['session_ttl'] > 604800) {
         $config['session_ttl'] = 43200;
+    }
+    if ($config['idle_ttl'] < 300 || $config['idle_ttl'] > 43200) {
+        $config['idle_ttl'] = 1800;
     }
     if ($config['challenge_ttl'] < 300 || $config['challenge_ttl'] > 1800) {
         $config['challenge_ttl'] = 600;

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { adminApi, errorMessage } from './api';
+import { adminApi, adminUpload, errorMessage } from './api';
 
 const LOCALES = [
   { id: 'uz', label: 'O‘zbekcha' },
@@ -39,6 +39,7 @@ export default function ProfileEditor({ profile, onSaved }) {
   const [form, setForm] = useState(() => normalize(profile));
   const [locale, setLocale] = useState('uz');
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
 
@@ -62,8 +63,26 @@ export default function ProfileEditor({ profile, onSaved }) {
     setSaved(false);
   }
 
-  async function submit(event) {
-    event.preventDefault();
+  async function uploadAvatar(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    setError('');
+    try {
+      const data = await adminUpload(file);
+      if (data && data.url) {
+        setField('avatar_url', data.url);
+        setSaved(false);
+      }
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function submit(event) {    event.preventDefault();
     setSaving(true);
     setError('');
     setSaved(false);
@@ -115,6 +134,10 @@ export default function ProfileEditor({ profile, onSaved }) {
         <label>
           <span>Avatar URL</span>
           <input type="url" value={form.avatar_url} onChange={(event) => setField('avatar_url', event.target.value)} maxLength={255} placeholder="https://..." />
+          <span className="admin-file-row">
+            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadAvatar} disabled={uploading} />
+            <small className="admin-form-note">{uploading ? 'Yuklanmoqda...' : 'JPEG/PNG/WebP, 2 MB gacha'}</small>
+          </span>
         </label>
       </div>
 

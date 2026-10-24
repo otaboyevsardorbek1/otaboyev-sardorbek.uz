@@ -50,6 +50,41 @@ export async function adminApi(path, options = {}) {
   return payload ? payload.data : null;
 }
 
+export async function adminUpload(file) {
+  const headers = new Headers();
+  if (csrfToken) {
+    headers.set('X-CSRF-Token', csrfToken);
+  }
+  headers.set('X-Requested-With', 'XMLHttpRequest');
+
+  const body = new FormData();
+  body.append('file', file);
+
+  const response = await fetch('/api.php/admin/uploads', {
+    method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers,
+    body,
+  });
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    const failure = new Error((payload && payload.message) || 'Upload failed');
+    failure.status = response.status;
+    failure.code = payload && payload.code;
+    throw failure;
+  }
+
+  return payload ? payload.data : null;
+}
+
 export function errorMessage(error) {
   if (!error) return 'Xatolik yuz berdi.';
   if (error.errors && typeof error.errors === 'object') {

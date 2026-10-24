@@ -86,6 +86,22 @@ export default function AdminDashboard() {
     }
   }
 
+  async function logoutAll() {
+    if (!window.confirm('Barcha qurilmalardagi admin sessiyalar yopilsinmi?')) {
+      return;
+    }
+    try {
+      await adminApi('/logout-all', { method: 'POST' });
+    } catch (failure) {
+      if (failure.status !== 401) {
+        setToast(errorMessage(failure));
+      }
+    } finally {
+      setCsrfToken('');
+      router.replace('/admin/');
+    }
+  }
+
   if (phase === 'loading') {
     return (
       <main className="admin-loading-page">
@@ -138,6 +154,7 @@ export default function AdminDashboard() {
             <span>@{admin.telegram_username || admin.telegram_id}</span>
           </div>
           <button className="admin-btn admin-btn-ghost admin-btn-block" type="button" onClick={logout}>Chiqish</button>
+          <button className="admin-btn admin-btn-ghost admin-btn-block" type="button" onClick={logoutAll}>Barcha qurilmalardan chiqish</button>
         </div>
       </aside>
 

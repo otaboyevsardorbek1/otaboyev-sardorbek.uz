@@ -3,6 +3,7 @@
 // Compatible with PHP 7.1.
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/mailer.php';
 
 function contact_form_field_map(array $formConfig)
 {
@@ -281,6 +282,44 @@ function contact_native_form_config($lang)
     return array('children' => $children);
 }
 
+function contact_notify_admin_email($name, $email, $subject, $message, $lang)
+{
+    $config = admin_config();
+    $to = isset($config['email']) ? (string) $config['email'] : '';
+    if (filter_var($to, FILTER_VALIDATE_EMAIL) === false) {
+        return false;
+    }
+
+    $preview = function_exists('mb_substr') ? mb_substr((string) $message, 0, 5000, 'UTF-8') : substr((string) $message, 0, 5000);
+    $safeName = htmlspecialchars((string) $name, ENT_QUOTES, 'UTF-8');
+    $safeEmail = htmlspecialchars((string) $email, ENT_QUOTES, 'UTF-8');
+    $safeSubject = htmlspecialchars((string) $subject, ENT_QUOTES, 'UTF-8');
+    $safeMessage = nl2br(htmlspecialchars($preview, ENT_QUOTES, 'UTF-8'));
+
+    $mailSubject = 'Yangi kontakt xabari: ' . $subject;
+    $text = "Yangi kontakt xabari\n\n"
+        . 'Ism: ' . $name . "\n"
+        . 'Email: ' . $email . "\n"
+        . 'Til: ' . $lang . "\n"
+        . 'Mavzu: ' . $subject . "\n\n"
+        . $preview . "\n";
+    $html = '<!doctype html><html><body style="margin:0;padding:24px;background:#0b1220;color:#eaf1ff;font-family:Arial,sans-serif">'
+        . '<div style="max-width:620px;margin:0 auto;background:#111d30;border:1px solid #223552;border-radius:16px;padding:28px">'
+        . '<p style="margin:0 0 8px;color:#8fb4e8;font-size:13px;letter-spacing:.08em;text-transform:uppercase">Yangi kontakt xabari</p>'
+        . '<h1 style="margin:0 0 16px;font-size:22px">' . $safeSubject . '</h1>'
+        . '<p style="margin:0 0 6px;color:#b8c7df"><strong>Kimdan:</strong> ' . $safeName . ' &lt;' . $safeEmail . '&gt;</p>'
+        . '<p style="margin:0 0 18px;color:#8fa3bf;font-size:13px">Til: ' . htmlspecialchars((string) $lang, ENT_QUOTES, 'UTF-8') . '</p>'
+        . '<div style="padding:16px 18px;background:#0a1424;border-radius:12px;line-height:1.6;color:#dbe7f8">' . $safeMessage . '</div>'
+        . '</div></body></html>';
+
+    $result = admin_mail_send($to, $mailSubject, $text, $html, $email);
+    if (!$result[0]) {
+        error_log('contact email notification failed: ' . $result[1]);
+        return false;
+    }
+    return true;
+}
+
 function contact_native_submit(array $payload)
 {
     $lang = isset($_POST['lang']) ? strtolower(trim((string) $_POST['lang'])) : 'uz';
@@ -343,6 +382,10 @@ function contact_native_submit(array $payload)
     if (!contact_store_message($formConfig, 'contact', $data, array())) {
         return array(false, 'Message could not be saved. Please try again or email directly.', 503);
     }
+
+    // Best-effort email notification. The inbox and Telegram bridge remain the
+    // source of truth, so a mail failure must not change the form response.
+    contact_notify_admin_email($name, $email, $subject, $message, $lang);
 
     // Best-effort: ping every active admin in Telegram. Failures here must not
     // change the contact form response.

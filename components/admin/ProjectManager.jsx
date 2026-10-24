@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { adminApi, errorMessage } from './api';
+import { adminApi, adminUpload, errorMessage } from './api';
 
 const LOCALES = [
   { id: 'uz', label: 'O‘zbekcha' },
@@ -39,6 +39,7 @@ function normalize(project) {
     category: project ? project.category || '' : '',
     repo_url: project ? project.repo_url || '' : '',
     demo_url: project ? project.demo_url || '' : '',
+    image_url: project ? project.image_url || '' : '',
     sort_order: project ? Number(project.sort_order || 0) : 0,
     is_active: project ? Boolean(project.is_active) : true,
     translations,
@@ -49,6 +50,7 @@ function ProjectEditor({ project, onCancel, onSaved }) {
   const [form, setForm] = useState(() => normalize(project));
   const [locale, setLocale] = useState('uz');
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const isNew = !project || !project.id;
 
@@ -64,6 +66,24 @@ function ProjectEditor({ project, onCancel, onSaved }) {
         [locale]: { ...current.translations[locale], [key]: value },
       },
     }));
+  }
+
+  async function uploadImage(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    setError('');
+    try {
+      const data = await adminUpload(file);
+      if (data && data.url) {
+        setField('image_url', data.url);
+      }
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setUploading(false);
+    }
   }
 
   async function submit(event) {
@@ -127,6 +147,14 @@ function ProjectEditor({ project, onCancel, onSaved }) {
         <label>
           <span>Demo URL</span>
           <input type="url" value={form.demo_url} onChange={(event) => setField('demo_url', event.target.value)} maxLength={255} placeholder="https://..." />
+        </label>
+        <label>
+          <span>Muqova rasm URL</span>
+          <input type="url" value={form.image_url} onChange={(event) => setField('image_url', event.target.value)} maxLength={255} placeholder="https://... yoki yuklang" />
+          <span className="admin-file-row">
+            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadImage} disabled={uploading} />
+            <small className="admin-form-note">{uploading ? 'Yuklanmoqda...' : 'JPEG/PNG/WebP, 2 MB gacha'}</small>
+          </span>
         </label>
         <label>
           <span>Tartib</span>

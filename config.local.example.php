@@ -27,6 +27,7 @@ return array(
         'email' => 'admin@otaboyev-sardorbek.uz',
         'phone' => '+998900000000',
         'session_ttl' => 43200,
+        'idle_ttl' => 1800,
         'challenge_ttl' => 600,
         'otp_max_attempts' => 5,
         'telegram_auth_window' => 300,
