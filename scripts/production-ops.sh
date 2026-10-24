@@ -74,7 +74,7 @@ do_migrate() {
   [ -n "$port" ] && args=(-P "$port" "${args[@]}")
   [ -n "$socket" ] && args=(-S "$socket" "${args[@]}")
 
-  for file in database/migrate-project-sections.sql database/migrate-contact-messages.sql database/migrate-bot-guards.sql database/migrate-admin-role.sql; do
+  for file in database/migrate-project-sections.sql database/migrate-contact-messages.sql database/migrate-bot-guards.sql database/migrate-admin-role.sql database/migrate-project-media.sql; do
     [ -f "$APP_DIR/$file" ] || { log "skip $file (absent)"; continue; }
     log "importing $file (idempotent)"
     mysql "${args[@]}" < "$APP_DIR/$file"
@@ -230,6 +230,29 @@ else
   fi
   echo "\$(date -Is) health=\$code" >> "\$LOG_DIR/monitor.log"
   exit 1
+fi
+
+# Disk and TLS are silent failure modes: the site keeps answering until the
+# filesystem fills or the certificate expires. Report once per threshold.
+disk_used=\$(df -P "\$APP_DIR" | awk 'NR==2 {gsub("%", "", \$5); print \$5}' 2>/dev/null || echo 0)
+if [ -n "\$disk_used" ] && [ "\$disk_used" -ge 90 ] 2>/dev/null; then
+  notify "🚨 Disk \$disk_used% (\$(hostname))"
+  echo "\$(date -Is) disk_used=\$disk_used" >> "\$LOG_DIR/monitor.log"
+fi
+
+tls_host=\$(printf '%s' "\$SITE_URL" | sed -E 's#^https?://##; s#/.*\$##')
+if command -v openssl >/dev/null 2>&1 && [ -n "\$tls_host" ]; then
+  tls_end=\$(echo | openssl s_client -servername "\$tls_host" -connect "\$tls_host:443" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+  if [ -n "\$tls_end" ]; then
+    tls_epoch=\$(date -d "\$tls_end" +%s 2>/dev/null || echo 0)
+    if [ "\$tls_epoch" -gt 0 ]; then
+      tls_days=\$(( (tls_epoch - \$(date +%s)) / 86400 ))
+      if [ "\$tls_days" -lt 14 ]; then
+        notify "🚨 TLS sertifikat \${tls_days} kunda tugaydi (\$tls_host)"
+        echo "\$(date -Is) tls_days=\$tls_days" >> "\$LOG_DIR/monitor.log"
+      fi
+    fi
+  fi
 fi
 
 # Bot bridge: config presence + Telegram webhook backlog.

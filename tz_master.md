@@ -91,7 +91,7 @@ mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
 mysql -u USER -p DB_NAME < database/migrate-admin-role.sql
 ```
 
-`migrate-project-sections.sql` adds `results` and `stack_notes`; like the others it is idempotent (`information_schema` gates each `ALTER`), so all four migrations are safe to re-run. `migrate-contact-messages.sql` also creates `idx_contact_messages_ip (ip_hash, created_at)` for the per-IP rate-limit query; `migrate-bot-guards.sql` adds the bot idempotency/rate-limit tables; `migrate-admin-role.sql` adds `admin_users.role` (`super`/`admin`), its index and a one-time safety promotion of the earliest active admin when no active super admin exists. Re-import `database/seed.sql` **only** when resetting to the default content — it overwrites existing admin edits.
+`migrate-project-sections.sql` adds `results` and `stack_notes`; like the others it is idempotent (`information_schema` gates each `ALTER`), so all five migrations are safe to re-run. `migrate-project-media.sql` adds `projects.image_url` for admin-uploaded covers. `migrate-contact-messages.sql` also creates `idx_contact_messages_ip (ip_hash, created_at)` for the per-IP rate-limit query; `migrate-bot-guards.sql` adds the bot idempotency/rate-limit tables; `migrate-admin-role.sql` adds `admin_users.role` (`super`/`admin`), its index and a one-time safety promotion of the earliest active admin when no active super admin exists. Re-import `database/seed.sql` **only** when resetting to the default content — it overwrites existing admin edits.
 
 ## 4. API contract
 
@@ -132,6 +132,8 @@ Errors: `404 project_not_found`, `503 db_unavailable`, `405 method_not_allowed`,
 | POST | `/api.php/admin/auth/resend` | resend OTP with rate limit |
 | GET | `/api.php/admin/session` | session + CSRF; `?optional=1` returns 200 with `{authenticated:false}` |
 | POST | `/api.php/admin/logout` | revoke session |
+| POST | `/api.php/admin/logout-all` | revoke every session for the current admin |
+| POST | `/api.php/admin/uploads` | upload an avatar/project cover (JPEG/PNG/WebP, ≤2 MB) |
 | GET/PUT | `/api.php/admin/profile` | profile + 3 translations |
 | GET/POST | `/api.php/admin/projects` | list all projects / create |
 | GET/PUT/DELETE | `/api.php/admin/projects/{id}` | read / update / delete |
@@ -147,7 +149,7 @@ Errors: `404 project_not_found`, `503 db_unavailable`, `405 method_not_allowed`,
 
 - Telegram Login Widget callback: HMAC-SHA256 with the bot token, `auth_date` window, allowed `ADMIN_TELEGRAM_ID` or active `admin_users` row. `admin_users.role` separates `super` (admin management) from `admin` (content + inbox); `/api.php/admin/admins*` requires `super` and the last active super admin cannot be removed, deactivated or demoted.
 - OTP: 6 digits, HMAC-hashed, one-time, 10 minutes, 5 attempts.
-- Cookies: `admin_session` HttpOnly, Secure on HTTPS, `SameSite=Strict`; `admin_challenge` HttpOnly, `SameSite=Lax`.
+- Cookies: `admin_session` HttpOnly, Secure on HTTPS, `SameSite=Strict`; `admin_challenge` HttpOnly, `SameSite=Lax`. Sessions have an absolute TTL (`admin.session_ttl`, 43200s) plus an idle timeout (`admin.idle_ttl`, default 1800s, clamped 300–43200) enforced through `admin_sessions.last_seen_at`; `POST /api.php/admin/logout-all` clears every session for that admin.
 - CSRF: HMAC token bound to the session; required on POST/PUT/DELETE. `Origin`/`Referer` must match `site_url` by scheme, host and port; `Origin: null` is rejected; if both headers are absent (CLI), `X-Requested-With: XMLHttpRequest` is required.
 - Rate limits: challenge and start attempts per time window; auth events recorded.
 - Audit: profile/project, inbox read/delete, sitemap and admin-user mutations written to `admin_audit_log`.
@@ -309,10 +311,11 @@ CI lives in `.github/workflows/ci.yml` and runs on every push/PR to `main`:
 
 1. `npm ci`
 2. `npm run check` (PHP/JS/Bash lint, including `tests/bot-guard-test.php` and `scripts/set-bot-commands.sh`)
-3. Static RBAC checks (`admin_require_super`, `last_super_admin`, `bot_find_admin`, `bot_notify_admins`, migration files, `setMyCommands`)
-4. MySQL 8.0 service: import `schema.sql` + `seed.sql` + `migrate-bot-guards.sql` (twice) + `migrate-admin-role.sql` twice on a legacy-shaped DB
-5. `tests/bot-guard-test.php` (real DB, no Telegram traffic)
-6. `npm run build` + secret-free `out/` artifact check
+3. `npm audit --omit=dev --audit-level=high`; Dependabot opens weekly npm and GitHub Actions PRs
+4. Static RBAC checks (`admin_require_super`, `last_super_admin`, `bot_find_admin`, `bot_notify_admins`, migration files, `setMyCommands`)
+5. MySQL 8.0 service: import `schema.sql` + `seed.sql` + `migrate-bot-guards.sql` (twice) + `migrate-admin-role.sql` twice on a legacy-shaped DB
+6. `tests/bot-guard-test.php` (real DB, no Telegram traffic)
+7. `npm run build` + secret-free `out/` artifact check (`npm run check:export`)
 
 Full workflow in `.github/workflows/ci.yml`. Server-only PHP changes must be verified manually with the same steps.
 
@@ -331,17 +334,19 @@ DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... ./run_local.sh
 
 ### 7.2. Static export — artifact
 
-- `out/` contains `.htaccess`, `api.php`, `404.html`, `backend/`, admin pages.
-- `out/config.local.php`, `out/config.local.js`, `out/github_keys.txt` are **absent**.
+- `out/` contains `.htaccess`, `api.php`, `404.html`, `backend/`, admin pages, `robots.txt`, `manifest.webmanifest`, `og/og-{uz,en,ru}.png`.
+- `out/config.local.php`, `out/config.local.js`, `out/github_keys.txt` are **absent**; legacy `css/custom.*.css` and `js/portfolio.js` are not shipped.
 - `out/uz/`, `out/en/`, `out/ru/` — 3 homes; `out/{uz,en,ru}/projects/` — 3 listings; 9 known details; 3 generic `view` routes.
-- CI asserts the same.
+- CI asserts the same through `npm run check:export`.
 
 ### 7.3. Frontend and SEO
 
 - `/uz/`, `/en/`, `/ru/` load without console/network/hydration errors.
 - One known detail per locale, its language switcher and API refresh.
 - One admin-created slug through Apache → `/projects/view/?slug=...` fallback.
-- Canonical + hreflang on 3 homes + 3 listings + 9 details.
+- Canonical + hreflang on 3 homes + 3 listings + 9 details; localized `og:image` (`/og/og-{locale}.png`, 1200×630) and `twitter:card=summary_large_image`.
+- Person/WebSite JSON-LD on homes, CreativeWork JSON-LD on known project details.
+- `robots.txt` points at `https://otaboyev-sardorbek.uz/sitemap.xml` and disallows admin/API paths.
 - CV links resolve (`/files/sardorbek-otaboyev-cv-{uz,en,ru}.{pdf,txt}`).
 
 ### 7.4. Content API

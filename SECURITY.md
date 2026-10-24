@@ -39,8 +39,8 @@ RBAC: `super` va `admin` rollari `admin_users.role` da saqlanadi; `admin_require
 | 16 | Email header injection | Email, From, Reply-To va subject qiymatlari `\r`, `\n`, `\0` dan tozalanadi; recipient `FILTER_VALIDATE_EMAIL` bilan tekshiriladi; legacy email HTML va CSV formula injection’dan himoyalangan. |
 | 17 | Open redirect / XSS | Telegram callback faqat qat’iy `/admin/verify/` yoki `/admin/?error=...` manziliga yo‘naltiradi; legacy form redirect faqat `http(s)` yoki relative path qabul qiladi. |
 | 18 | Error / stack trace leakage | API faqat `{status,message,code}` qaytaradi; batafsil xato `error_log` ga yoziladi. |
-| 19 | Audit yo‘qligi | `admin_auth_events` va `admin_audit_log`: login, logout, profile/project o‘zgarishlari, IP hash. |
-| 20 | Eski sessiya / challenge to‘planishi | Muddati o‘tgan session/challenge va 7 kundan eski auth eventlar opportunistik tozalanadi. |
+| 19 | Audit yo‘qligi | `admin_auth_events` va `admin_audit_log`: login, logout, logout-all, profile/project o‘zgarishlari, IP hash. |
+| 20 | Eski sessiya / challenge to‘planishi | Muddati o‘tgan session/challenge, idle timeout (`admin.idle_ttl`, default 1800s) va 7 kundan eski auth eventlar opportunistik tozalanadi. |
 
 Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `api.php` `display_errors=0` va `log_errors` ni majburiy qiladi, MySQL foydalanuvchisiga faqat kerakli bazaga ruxsat beriladi, `database/` va `backend/` HTTP’dan yopiladi. Production PHP 8.1+ tavsiya etiladi.
 
@@ -168,7 +168,7 @@ admin_login_challenges'ga hash yoziladi (HMAC-SHA256(challenge_token:code, APP_S
    ↓ 6 xonali OTP → admin@otaboyev-sardorbek.uz (mail driver)
 POST /api.php/admin/auth/verify { code } (CSRF yo‘q — challenge o‘zi token)
    ↓ 5 urinish, 10 daqiqa TTL, bir martalik (consumed_at)
-session cookie (HttpOnly, Secure, SameSite=Strict, 43200s)
+session cookie (HttpOnly, Secure, SameSite=Strict, 43200s absolute + idle_ttl 1800s)
    ↓ Har bir mutatsiya: X-CSRF-Token = HMAC-SHA256('csrf:'+session_token, APP_SECRET)
    ↓ Origin/Referer scheme+host+port tekshiruvi
 OK

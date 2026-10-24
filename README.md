@@ -43,7 +43,7 @@ Loyiha tuzilishi:
 npm ci
 npm run build
 ```
-Natija `out/` papkasida: 3 bosh sahifa, 3 loyihalar ro‘yxati, 9 project detail sahifa, 3 admin sahifa, CSS/JS, CV fayllar, `api.php`, `backend/`, `.htaccess` va `sitemap.xml`. `config.local.php` build artefaktiga **qo‘shilmaydi**; uni web rootga qo‘lda `600` bilan qo‘ying. Project detail sahifalar Next.js tomonidan generatsiya qilinadi; admin yaratgan yangi slug Apache rewrite orqali `/projects/view/?slug=...` fallback’ida ochiladi.
+Natija `out/` papkasida: 3 bosh sahifa, 3 loyihalar ro‘yxati, 9 project detail sahifa, 3 admin sahifa, CSS/JS, CV fayllar, `api.php`, `backend/`, `.htaccess`, `robots.txt`, `manifest.webmanifest`, `og/*.png` va `sitemap.xml`. `config.local.php` build artefaktiga **qo‘shilmaydi**; uni web rootga qo‘lda `600` bilan qo‘ying. Project detail sahifalar Next.js tomonidan generatsiya qilinadi; admin yaratgan yangi slug Apache rewrite orqali `/projects/view/?slug=...` fallback’ida ochiladi. `postbuild` `scripts/check-export.mjs` bilan artefaktni tekshiradi: `api.php`, `.htaccess`, `404.html`, admin sahifalar, `robots.txt`, OG rasmlar va sitemap borligi hamda maxfiy fayllar va legacy CSS yo‘qligi.
 
 ### 2. MySQL (content API uchun)
 cPanel yoki lokal MySQL’da baza yarating va sxemani import qiling:
@@ -59,6 +59,7 @@ mysql -u USER -p DB_NAME < database/seed.sql
 # mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
 # Admin rollari (super/admin) uchun (idempotent):
 # mysql -u USER -p DB_NAME < database/migrate-admin-role.sql
+# mysql -u USER -p DB_NAME < database/migrate-project-media.sql
 # seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
 # u mavjud admin tahrirlarini bosib ketadi.
 ```
@@ -107,7 +108,8 @@ curl -s "http://127.0.0.1:8000/api.php/projects/gitinsight?lang=ru"
 ### Testlar
 ```bash
 npm run check                      # PHP/JS/Bash lint + tests/bot-guard-test.php
-npm run build                      # static export + secret-free artifact
+npm run build                      # static export + secret-free artifact tekshiruvi
+npm run check:export               # mavjud out/ artefaktini tekshirish
 
 # Bot guard unit testlari (real test DB, Telegram'ga chiqmaydi):
 DB_HOST=127.0.0.1 DB_NAME=test_portfolio DB_USER=root DB_PASS='' \
@@ -132,6 +134,8 @@ Admin panel `/admin/` da. Kirish ikki bosqichli:
 
 1. Telegram Login Widget admin Telegram akkauntini tasdiqlaydi.
 2. Admin emailiga 6 xonali kod yuboriladi; kod 10 daqiqa amal qiladi va 5 urinishdan keyin bekor qilinadi.
+
+Sessiya 12 soatlik mutlaq TTL va 30 daqiqalik idle timeout bilan cheklangan (`ADMIN_IDLE_TTL` yoki `config.local.php` dagi `admin.idle_ttl`; 300–43200 soniya). Panelda **Barcha qurilmalardan chiqish** tugmasi `POST /api.php/admin/logout-all` orqali shu adminning hamma sessiyalarini o‘chiradi.
 
 Panelda profil (ism, email, GitHub, Telegram, avatar va uch tildagi role/bio/quick_text/location), loyihalar (slug, kategoriya, havolalar, tartib, faollik va uch tildagi tag/title/summary/description/tech/results/stack_notes), kelgan xabarlar va super admin uchun qo‘shimcha adminlar boshqariladi. `results` va `stack_notes` har bir qatorda bitta element sifatida kiritiladi. O‘zgarishlar `profiles`, `profile_translations`, `projects`, `project_translations`, `contact_messages` va `admin_users` jadvallariga yoziladi; loyiha o‘zgarishi `sitemap.xml` ni avtomatik yangilaydi va detail sahifada API fetch’dan keyin ko‘rinadi.
 
@@ -247,6 +251,7 @@ mysql -u USER -p DB_NAME < database/seed.sql
 # mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
 # Admin rollari (super/admin) uchun (idempotent):
 # mysql -u USER -p DB_NAME < database/migrate-admin-role.sql
+# mysql -u USER -p DB_NAME < database/migrate-project-media.sql
 # seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
 # u mavjud admin tahrirlarini bosib ketadi.
 ```
@@ -266,9 +271,11 @@ Adminlar ikki rolda: **Super** (boshqa adminlarni qo‘shadi/o‘chiradi, rolni 
 | `POST /api.php/admin/auth/resend` | yangi kod yuborish |
 | `GET /api.php/admin/session` | session + CSRF token |
 | `POST /api.php/admin/logout` | sessionni yopish |
-| `GET/PUT /api.php/admin/profile` | profil o‘qish/saqlash |
+| `POST /api.php/admin/logout-all` | shu adminning barcha qurilmalardagi sessiyalarini yopish |
+| `POST /api.php/admin/uploads` | avatar/muqova uchun rasm yuklash (JPEG/PNG/WebP, ≤2 MB) → `/files/uploads/<random>.<ext>` |
+| `GET/PUT /api.php/admin/profile` | profil o‘qish/saqlash (avatar URL yoki yuklangan rasm) |
 | `GET/POST /api.php/admin/projects` | ro‘yxat / yangi loyiha; saqlashda sitemap avtomatik yangilanadi |
-| `GET/PUT/DELETE /api.php/admin/projects/{id}` | bitta loyiha |
+| `GET/PUT/DELETE /api.php/admin/projects/{id}` | bitta loyiha (muqova `image_url` bilan) |
 | `GET /api.php/admin/messages[?count=1\|unread=1]` | inbox count/ro‘yxat |
 | `GET/PUT/DELETE /api.php/admin/messages/{id}` | xabar / read-unread / o‘chirish |
 | `POST /api.php/admin/sitemap` | `sitemap.xml` ni qayta generatsiya qilish |
@@ -466,7 +473,7 @@ sudo find /var/www/otaboyev-sardorbek.uz -type f -exec chmod 644 {} \;
 | `/api.php/health` | `{"status":"ok"}` |
 | `/api.php/websites` | tokenli endpoint |
 
-Contact form `id=contact` bilan `form_contact[ed-f-1..4]` (ism, email, mavzu, xabar), `lang` va bo‘sh `website` honeypot yuboradi. Xabar `contact_messages` jadvaliga yoziladi; IP bo‘yicha 10 daqiqada 5 tadan ko‘p yuborilsa `429`, DB yo‘q bo‘lsa `503` qaytadi (frontend `mailto` fallback’ga o‘tadi). Admin panelda **Xabarlar** bo‘limidan o‘qish, read/unread va o‘chirish mumkin.
+Contact form `id=contact` bilan `form_contact[ed-f-1..4]` (ism, email, mavzu, xabar), `lang` va bo‘sh `website` honeypot yuboradi. Xabar `contact_messages` jadvaliga yoziladi; IP bo‘yicha 10 daqiqada 5 tadan ko‘p yuborilsa `429`, DB yo‘q bo‘lsa `503` qaytadi (frontend `mailto` fallback’ga o‘tadi). Saqlangandan keyin faol adminlarga Telegram xabarnomasi va `admin.email` manziliga best-effort email yuboriladi — ularning xatosi forma javobini o‘zgartirmaydi. Admin panelda **Xabarlar** bo‘limidan o‘qish, read/unread va o‘chirish mumkin.
 
 Javob formati:
 
@@ -607,6 +614,7 @@ mysql -u USER -p DB_NAME < database/seed.sql
 # mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
 # Admin rollari (super/admin) uchun (idempotent):
 # mysql -u USER -p DB_NAME < database/migrate-admin-role.sql
+# mysql -u USER -p DB_NAME < database/migrate-project-media.sql
 # seed.sql faqat standart kontentni tiklash uchun qayta import qilinadi;
 # u mavjud admin tahrirlarini bosib ketadi.
 ```

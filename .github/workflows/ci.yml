@@ -55,6 +55,9 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Dependency audit (high and above)
+        run: npm audit --omit=dev --audit-level=high
+
       - name: PHP/JS/Bash lint
         run: npm run check
 
@@ -65,8 +68,11 @@ jobs:
           test -f database/schema.sql
           test -f database/migrate-bot-guards.sql
           test -f database/migrate-admin-role.sql
+          test -f database/migrate-project-media.sql
           test -f scripts/set-bot-commands.sh
           test -f tests/bot-guard-test.php
+          test -f files/uploads/.htaccess
+          test -f "app/(site)/[locale]/privacy/page.js"
           echo "OK: required files present"
 
           echo "== schema.sql: admin_users.role =="
@@ -123,6 +129,14 @@ jobs:
           grep -q "idx_contact_messages_ip" database/schema.sql
           grep -q "idx_contact_messages_ip" database/migrate-contact-messages.sql
           echo "OK: contact rate-limit index"
+
+          echo "== media upload guard =="
+          grep -q "image_url" database/schema.sql
+          grep -q "function admin_handle_upload" backend/admin.php
+          grep -q "admin/uploads" backend/admin.php
+          grep -q "image_url" backend/content.php
+          grep -q "Require all denied" files/uploads/.htaccess
+          echo "OK: media upload + uploads execution guard"
 
       - name: Wait for MySQL
         run: |
@@ -230,6 +244,26 @@ jobs:
             "SHOW COLUMNS FROM project_translations LIKE 'stack_notes'" | grep -qE '^stack_notes[[:space:]]+text'
           echo "OK: project-sections migration idempotent"
 
+      - name: Project-media migration on legacy-shaped DB
+        env:
+          MYSQL_PWD: test
+        run: |
+          set -e
+          # Simulate a DB created before project covers existed.
+          mysql -h 127.0.0.1 -utest test_portfolio -e \
+            "ALTER TABLE projects DROP COLUMN image_url;"
+          mysql -h 127.0.0.1 -utest test_portfolio -N -e \
+            "SHOW COLUMNS FROM projects LIKE 'image_url'" | grep -q . \
+            && { echo "image_url still present after drop" >&2; exit 1; } || true
+
+          # Apply twice: the second run must be a no-op, not a duplicate-column error.
+          mysql -h 127.0.0.1 -utest test_portfolio < database/migrate-project-media.sql
+          mysql -h 127.0.0.1 -utest test_portfolio < database/migrate-project-media.sql
+
+          mysql -h 127.0.0.1 -utest test_portfolio -N -e \
+            "SHOW COLUMNS FROM projects LIKE 'image_url'" | grep -qE '^image_url[[:space:]]+varchar\(255\)'
+          echo "OK: project-media migration idempotent"
+
       - name: Contact-messages migration is idempotent
         env:
           MYSQL_PWD: test
@@ -304,6 +338,12 @@ jobs:
           test -d out/uz/projects
           test -d out/en/projects
           test -d out/ru/projects
+          test -d out/uz/privacy
+          test -d out/en/privacy
+          test -d out/ru/privacy
+          test -f out/files/uploads/.htaccess
+          grep -q "/uz/privacy/" out/sitemap.xml
+          npm run check:export
           echo "OK: export artifact"
 
       - name: Upload failure artifacts

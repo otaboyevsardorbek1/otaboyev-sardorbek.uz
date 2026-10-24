@@ -10,23 +10,24 @@ Oxirgi audit: **2026-10-22**. Joriy ish va backlog — [tz.md](tz.md), uzoq mudd
 |---|---|
 | Dependency o‘rnatish | `npm install` (yoki `npm ci`) |
 | Next dev server | `npm run dev` — API yo‘q; frontend statik fallback bilan ishlaydi |
-| Static export | `npm run build` → `out/`; postbuild `files/`, `js/`, `css/`, `favicon.svg`, `api.php`, `backend/`, `.htaccess`, `sitemap.xml` ni ko‘chiradi. `config.local.php` **ko‘chirilmaydi**; deployda web rootga qo‘lda `600` bilan qo‘yiladi, lokal preview skriptlari uni `out/` ga nusxalaydi |
-| CI | `.github/workflows/ci.yml` — push/PR’da `npm ci`, `npm run check`, statik RBAC/bot guard tekshiruvlari, MySQL 8.0 servisida migratsiyalar (bot guards va admin role ikki marta), `tests/bot-guard-test.php`, `npm run build` va export artefakti tekshiriladi |
+| Static export | `npm run build` → `out/`; postbuild `files/`, `js/`, `css/`, `favicon.svg`, `api.php`, `backend/`, `.htaccess`, `sitemap.xml` ni ko‘chiradi va `check-export.mjs` bilan artefaktni tekshiradi. Legacy `css/custom.*.css` va `js/portfolio.js` ko‘chirilmaydi; sitemap index/listing `lastmod` build sanasi bilan yangilanadi. `config.local.php` **ko‘chirilmaydi**; deployda web rootga qo‘lda `600` bilan qo‘yiladi, lokal preview skriptlari uni `out/` ga nusxalaydi |
+| CI | `.github/workflows/ci.yml` — push/PR’da `npm ci`, `npm run check`, `npm audit --omit=dev --audit-level=high`, statik RBAC/bot guard tekshiruvlari, MySQL 8.0 servisida migratsiyalar (bot guards va admin role ikki marta), `tests/bot-guard-test.php`, `npm run build` va export artefakti (`npm run check:export` bilan) tekshiriladi. Dependabot npm va GitHub Actions uchun haftalik PR ochadi |
 | Lokal preview | `./run_local.sh` (`APP_ENV=local`, default `127.0.0.1:8000`); to‘xtatish `./stop_local.sh` |
 | Server preview | `./run_server.sh` (`APP_ENV=production`, default `127.0.0.1:8081`); to‘xtatish `./stop_server.sh` |
-| Production ops | `./scripts/production-ops.sh {migrate|build|deploy|cron|logs|maildns|verify|all}` — serverda cPanel user sifatida; deploy snapshot olib `config.local.php` va `.well-known/` ni saqlaydi, `cron` kunlik backup + 5 daqiqalik health monitor (sayt, bot `configured`/`webhook_secret`/`database`, `pending_update_count`), `logs` user-level logrotate, `maildns` SPF/DKIM/DMARC, `verify` jonli HTTP tekshiruvlari (bot secret va DB holati ham) |
+| Production ops | `./scripts/production-ops.sh {migrate|build|deploy|cron|logs|maildns|verify|all}` — serverda cPanel user sifatida; deploy snapshot olib `config.local.php` va `.well-known/` ni saqlaydi, `cron` kunlik backup + 5 daqiqalik health monitor (sayt, TLS muddati <14 kun, disk ≥90%, bot `configured`/`webhook_secret`/`database`, `pending_update_count`), `logs` user-level logrotate, `maildns` SPF/DKIM/DMARC, `verify` jonli HTTP tekshiruvlari (bot secret va DB holati ham) |
 | Export preview (manual) | `APP_ENV=local SITE_URL=http://127.0.0.1:8000 DB_SOCKET=... DB_NAME=... DB_USER=... DB_PASS=... php -S 127.0.0.1:8000 -t out` |
 | Bot guard testlari | `DB_HOST=127.0.0.1 DB_NAME=test_portfolio DB_USER=root DB_PASS='' php tests/bot-guard-test.php` (yoki `DB_SOCKET=...`); Telegram’ga chiqmaydi |
-| Sintaksis tekshiruvi | `npm run check` — `php -l api.php`, backend fayllari, `scripts/php-server-router.php`, `tests/bot-guard-test.php`, `node --check js/portfolio.js`, run/stop skriptlari va `scripts/*.sh` `bash -n`; JSX ni `npm run build` tekshiradi |
+| Sintaksis tekshiruvi | `npm run check` — `php -l api.php`, backend fayllari, `scripts/php-server-router.php`, `tests/bot-guard-test.php`, `node --check js/portfolio.js`, `scripts/copy-static.mjs`, `scripts/check-export.mjs`, run/stop skriptlari va `scripts/*.sh` `bash -n`; JSX va metadata’ni `npm run build` tekshiradi |
+| Export tekshiruvi | `npm run check:export` — `out/` da `api.php`, `.htaccess`, `404.html`, `admin/`, `robots.txt`, `og/*.png`, sitemap (≥18 URL) borligi va `config.local.php`/`github_keys.txt`/`database/`/legacy CSS yo‘qligi; bosh sahifa canonical/hreflang/OG/Twitter/JSON-LD markerlari |
 | API health | `curl -s http://127.0.0.1:8000/api.php/health` |
 | Content API | `curl -s "http://127.0.0.1:8000/api.php/profile?lang=uz"` · `/api.php/projects?lang=uz` · `/api.php/projects/gitinsight?lang=uz` |
 | Admin config | `curl -s http://127.0.0.1:8000/api.php/admin/config` |
 | Tokenli endpoint | `curl -H "X-Api-Token: $API_TOKEN" http://127.0.0.1:8000/api.php/websites` (lokalda `APP_ENV=local` bilan dev token ham ishlaydi) |
 | DB (yangi) | `mysql -u USER -p DB_NAME < database/schema.sql` → `mysql -u USER -p DB_NAME < database/seed.sql` |
-| DB (eski) | Barcha migratsiya fayllari idempotent — `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql`, `database/migrate-admin-role.sql`; `database/seed.sql` faqat standart kontentni qayta yozish kerak bo‘lsa import qilinadi (mavjud admin kontenti o‘chadi) |
+| DB (eski) | Barcha migratsiya fayllari idempotent — `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql`, `database/migrate-admin-role.sql`, `database/migrate-project-media.sql`; `database/seed.sql` faqat standart kontentni qayta yozish kerak bo‘lsa import qilinadi (mavjud admin kontenti o‘chadi) |
 | CV PDF | `pandoc files/sardorbek-otaboyev-cv-<lang>.txt -o files/sardorbek-otaboyev-cv-<lang>.pdf -V geometry:margin=2cm --pdf-engine=xelatex -V mainfont="DejaVu Sans Mono"` |
 
-**Deploy:** cPanel’da MySQL DB yaratiladi, `config.local.php` yoziladi (yoki `DB_*` env beriladi), `npm ci && npm run build`, so‘ng `out/` tarkibi web rootga ko‘chiriladi. `out/` ichida `api.php`, `backend/`, `.htaccess`, `files/`, `sitemap.xml` bor — **`config.local.php` yo‘q**. Uni web rootga alohida `chmod 600` bilan qo‘ying (build artefaktiga hech qachon qo‘shilmaydi). Mavjud bazaga `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql` va `database/migrate-admin-role.sql` bir marta import qilinadi (hammasi idempotent, `mysql ... <` bilan qayta ishlatish xavfsiz). Production uchun HTTPS, haqiqiy DB, `APP_SECRET`, Telegram bot/ID va email sozlamalari majburiy. Web rootdagi `sitemap.xml` PHP jarayoni yoza olishi kerak (admin proyekt saqlaganda avtomatik yangilanadi); yozib bo‘lmasa admin panelida ogohlantirish chiqadi.
+**Deploy:** cPanel’da MySQL DB yaratiladi, `config.local.php` yoziladi (yoki `DB_*` env beriladi), `npm ci && npm run build`, so‘ng `out/` tarkibi web rootga ko‘chiriladi. `out/` ichida `api.php`, `backend/`, `.htaccess`, `files/`, `sitemap.xml` bor — **`config.local.php` yo‘q**. Uni web rootga alohida `chmod 600` bilan qo‘ying (build artefaktiga hech qachon qo‘shilmaydi). Mavjud bazaga `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql`, `database/migrate-admin-role.sql` va `database/migrate-project-media.sql` bir marta import qilinadi (hammasi idempotent, `mysql ... <` bilan qayta ishlatish xavfsiz). Production uchun HTTPS, haqiqiy DB, `APP_SECRET`, Telegram bot/ID va email sozlamalari majburiy. Web rootdagi `sitemap.xml` PHP jarayoni yoza olishi kerak (admin proyekt saqlaganda avtomatik yangilanadi); yozib bo‘lmasa admin panelida ogohlantirish chiqadi.
 
 **Muhim:** PHP built-in server `.htaccess` ni o‘qimaydi. Rewrite/redirect xatti-harakatini Apache’da alohida tekshir. Apache’da `/api.php/admin/...` route’lari ishlashi, `config.local.php`/`github_keys.txt`/`backend/`/`database/` 403 bo‘lishi, project detail URL’lari 200 va noma’lum URL’lar `404.html` bilan 404 bo‘lishi tekshirilgan. Nginx uchun `.htaccess` o‘rniga ekvivalent `try_files`/rewrite va `error_page 404 /404.html` kerak.
 
@@ -36,11 +37,14 @@ Oxirgi audit: **2026-10-22**. Joriy ish va backlog — [tz.md](tz.md), uzoq mudd
 
 - `app/(redirect)/page.js` — `/` dan `navigator.language` bo‘yicha `/{uz,en,ru}/` ga client redirect.
 - `app/(site)/[locale]/layout.js` — `<html lang>`; `LOCALES` va `generateStaticParams`.
-- `app/(site)/[locale]/page.js` — metadata, canonical/hreflang, bosh sahifa.
-- `app/(site)/[locale]/projects/page.js` — uz/en/ru loyihalar ro‘yxati.
-- `app/(site)/[locale]/projects/[slug]/page.js` — 9 ta ma’lum project detail sahifa; `generateStaticParams`, canonical/hreflang va OG metadata.
+- `app/(site)/[locale]/page.js` — metadata, canonical/hreflang, OG/Twitter, bosh sahifa; Person + WebSite JSON-LD.
+- `app/(site)/[locale]/projects/page.js` — uz/en/ru loyihalar ro‘yxati; OG/Twitter.
+- `app/(site)/[locale]/projects/[slug]/page.js` — 9 ta ma’lum project detail sahifa; `generateStaticParams`, canonical/hreflang, OG/Twitter va CreativeWork JSON-LD.
 - `app/(site)/[locale]/projects/view/page.js` — admin yaratgan yangi slug uchun client fallback; `.htaccess` shu yerga yo‘naltiradi.
-- `components/Home.jsx` — `'use client'`: theme, mobil nav, reveal, tilt, project filter, GitHub fetch, contact form, content API fetch.
+- `app/(site)/[locale]/privacy/page.js` — uz/en/ru maxfiylik siyosati; footer’dan link, canonical/hreflang va OG bilan.
+- `components/JsonLd.jsx` — `<script type="application/ld+json">` renderer (`<` ni escape qiladi).
+- `public/robots.txt`, `public/manifest.webmanifest`, `public/og/og-{uz,en,ru}.png` — SEO/PWA assetlari; Next static export ularni `out/` ga o‘zi ko‘chiradi.
+- `components/Home.jsx` — `'use client'`: theme, mobil nav, reveal, tilt, project filter, GitHub fetch (15 daqiqalik `localStorage` cache), contact form, content API fetch.
 - `components/ProjectsPage.jsx` — ro‘yxat sahifasi: theme, mobil nav, kartalar.
 - `components/ProjectDetail.jsx` — `'use client'`: statik fallback, API’dan yangilash, loading/404/503 holatlari, title/meta/canonical yangilash.
 - `app/admin/` — `/admin/` Telegram login, `/admin/verify/` email OTP, `/admin/dashboard/` protected panel.
@@ -53,12 +57,12 @@ Oxirgi audit: **2026-10-22**. Joriy ish va backlog — [tz.md](tz.md), uzoq mudd
 
 - `api.php` — request routing, native contact form, token check, Sitejet proxy va content/admin include.
 - `backend/config.php` — DB, admin va mail sozlamalarini env yoki gitignored `config.local.php` dan oladi.
-- `backend/contact.php` — contact form validatsiyasi, IP hash, rate limit, `contact_messages`ga saqlash va native handler.
+- `backend/contact.php` — contact form validatsiyasi, IP hash, rate limit, `contact_messages`ga saqlash, native handler va saqlangandan keyin `admin.email` ga best-effort email xabar (`shared` `admin_mail_send()`).
 - `backend/content.php` — public content API.
-- `backend/admin.php` — admin auth, session, CSRF, rate limit, audit, profile/project CRUD, inbox, sitemap va admin-user CRUD.
+- `backend/admin.php` — admin auth, session, CSRF, rate limit, audit, profile/project CRUD, inbox, sitemap, media upload va admin-user CRUD.
 - `backend/bot.php` — shaxsiy Telegram email ko‘prigi: webhook secret tekshiruvi, `admin_users` bo‘yicha ruxsat (`is_active=1`), IMAP inbox o‘qish, email yuborish (umumiy `admin_mail_send()`) va contact inbox. `update_id` idempotentligi (`bot_updates_seen`) va per-admin command limitlari (`bot_rate_limit`) bor; jadval bo‘lmasa bot ishlashda davom etadi. `bot_alert_admin()` bir xil xabarni 15 daqiqada bir marta yuboradi. Faqat `/api.php/bot/webhook` orqali ishlaydi; `/api.php/bot/health` faqat GET, yon ta’sirsiz (`bot_alert_admin` chaqirmaydi) va boolean holat qaytaradi (token/secret/parol yo‘q); public UI yoki CORS yo‘q.
 - `backend/mailer.php` — `mail`, SMTP, Resend, Brevo va lokal `log` driver. OTP va bot email’i bitta `admin_mail_send()` yo‘lidan o‘tadi; `Reply-To` barcha driverlarda ishlaydi. `log` driver faqat `APP_ENV != production` da ishlaydi va OTP qatoriga `code=` qo‘shadi.
-- `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql`, `database/migrate-admin-role.sql` — sxema, seed va eski baza migratsiyalari.
+- `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql`, `database/migrate-admin-role.sql`, `database/migrate-project-media.sql` — sxema, seed va eski baza migratsiyalari.
 
 ### Legacy va Sitejet qismi
 
@@ -98,9 +102,9 @@ Envelope: `{status:"ok",data:...}` yoki `{status:"error",message,code}`.
 - Jadvallar: `profiles`, `profile_translations`, `projects`, `project_translations`, `contact_messages`, `admin_users`, `admin_login_challenges`, `admin_sessions`, `admin_auth_events`, `admin_audit_log`, `bot_updates_seen`, `bot_rate_limit`.
 - `tech`, `results`, `stack_notes` — JSON matn (`TEXT`), PHP’da `json_decode`. `contact_messages.payload` — form maydonlari va attachment metadata JSON’i.
 - `database/seed.sql` — 1 profil, 3 loyiha va 9 tarjima (uz/en/ru).
-- Yangi o‘rnatish `schema.sql` dan oladi; eski bazaga barcha migratsiyalar (`migrate-project-sections`, `migrate-contact-messages`, `migrate-bot-guards`, `migrate-admin-role`) idempotent tarzda qo‘llanadi. `seed.sql` faqat standart kontentni tiklash uchun qayta import qilinadi — u mavjud admin tahrirlarini bosib ketadi.
+- Yangi o‘rnatish `schema.sql` dan oladi; eski bazaga barcha migratsiyalar (`migrate-project-sections`, `migrate-contact-messages`, `migrate-bot-guards`, `migrate-admin-role`, `migrate-project-media`) idempotent tarzda qo‘llanadi. `seed.sql` faqat standart kontentni tiklash uchun qayta import qilinadi — u mavjud admin tahrirlarini bosib ketadi.
 - `contact_messages` da `idx_contact_messages_ip (ip_hash, created_at)` indeksi bor — per-IP rate-limit so‘rovi uchun; `migrate-contact-messages.sql` uni eski bazalarga ham idempotent qo‘shadi.
-- `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql` va `database/migrate-admin-role.sql` versiyalanadi (`*.sql` ignore’dan istisno). `database/` web’dan `.htaccess` bilan yopilgan; `out/` ga ko‘chirilmaydi.
+- `database/schema.sql`, `database/seed.sql`, `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql`, `database/migrate-admin-role.sql` va `database/migrate-project-media.sql` versiyalanadi (`*.sql` ignore’dan istisno). `database/` web’dan `.htaccess` bilan yopilgan; `out/` ga ko‘chirilmaydi.
 - Production DB user’ga faqat `SELECT, INSERT, UPDATE, DELETE` beriladi; `CREATE`/`ALTER`/`DROP` migratsiya vaqtida vaqtincha qo‘shiladi. Hozirgi baza `host9590_portfolio` shu least-privilege bilan ishlaydi.
 
 ## Admin auth va xavfsizlik
@@ -109,12 +113,12 @@ Envelope: `{status:"ok",data:...}` yoki `{status:"error",message,code}`.
 - Rollar: `admin_users.role` — `super` (boshqa adminlarni boshqaradi) yoki `admin` (faqat kontent/inbox). `/api.php/admin/admins` endpoint’i `super` talab qiladi (`403 forbidden`). Oxirgi faol super adminni o‘chirish/deaktiv qilish yoki rolni pasaytirish `422 last_super_admin` bilan bloklanadi. Rol o‘zgarishi darhol kuchga kiradi, chunki `admin_lookup_session()` har safar `admin_users` ga JOIN qiladi.
 - `backend/admin.php` OTP’ni HMAC bilan hashlaydi; 6 raqam, 10 daqiqa, 5 urinish; challenge va session muddatlari cheklangan.
 - Validatsiya UTF-8 belgilar bilan hisoblaydi (`admin_strlen()`/`contact_strlen()`), chunki MySQL `VARCHAR` limitlari bayt emas, belgi. `TEXT` maydonlari (bio, description, message) bayt limitida qoladi; kiritilgan matn kesilmaydi.
-- Cookie’lar: `admin_session` HttpOnly, HTTPS’da Secure, `SameSite=Strict`; `admin_challenge` HttpOnly, `SameSite=Lax`.
+- Cookie’lar: `admin_session` HttpOnly, HTTPS’da Secure, `SameSite=Strict`; `admin_challenge` HttpOnly, `SameSite=Lax`. `admin_sessions.last_seen_at` + `admin.idle_ttl` (default 1800s, `ADMIN_IDLE_TTL` yoki `config.local.php`) bo‘yicha idle timeout; muddat 300–43200 oralig‘iga clamp qilinadi. `POST /api.php/admin/logout-all` shu adminning barcha sessiyalarini o‘chiradi.
 - Mutation’larda `X-CSRF-Token` majburiy; rate limit, `admin_auth_events` va `admin_audit_log` mavjud. `admin_check_origin()` `Origin`/`Referer`ni `site_url` bilan strict host/scheme/port bo‘yicha solishtiradi, `Origin: null`ni rad etadi, ikkala header bo‘lmasa `X-Requested-With: XMLHttpRequest` talab qiladi.
 - `api.php` `display_errors`ni har doim `0` qiladi va xatolarni `log_errors` orqali server logiga yozadi; `APP_ENV` qiymati stack trace’ni qayta yoqmaydi.
 - `APP_SECRET` aniq 64 hex bo‘lmasa, email driver sozlanmagan bo‘lsa, production `SITE_URL` HTTPS bo‘lmasa yoki Telegram bot token/username yoki numeric admin ID noto‘g‘ri bo‘lsa auth o‘chiq (`enabled:false`).
 - Bot token, app secret yoki OTP’ni public JSON/logga chiqarmang. Admin response’larda wildcard CORS yo‘q.
-- Admin route’lar: `GET /api.php/admin/config`, `GET /api.php/admin/auth/telegram`, `GET /api.php/admin/auth/status`, `POST /api.php/admin/auth/verify`, `POST /api.php/admin/auth/resend`, `GET /api.php/admin/session[?optional=1]`, `POST /api.php/admin/logout`, `GET/PUT /api.php/admin/profile`, `GET/POST /api.php/admin/projects`, `GET/PUT/DELETE /api.php/admin/projects/{id}`, `GET /api.php/admin/messages[?count=1|unread=1]`, `GET/PUT/DELETE /api.php/admin/messages/{id}`, `POST /api.php/admin/sitemap`, `GET/POST /api.php/admin/admins`, `GET/PUT/DELETE /api.php/admin/admins/{id}`.
+- Admin route’lar: `GET /api.php/admin/config`, `GET /api.php/admin/auth/telegram`, `GET /api.php/admin/auth/status`, `POST /api.php/admin/auth/verify`, `POST /api.php/admin/auth/resend`, `GET /api.php/admin/session[?optional=1]`, `POST /api.php/admin/logout`, `POST /api.php/admin/logout-all`, `POST /api.php/admin/uploads`, `GET/PUT /api.php/admin/profile`, `GET/POST /api.php/admin/projects`, `GET/PUT/DELETE /api.php/admin/projects/{id}`, `GET /api.php/admin/messages[?count=1|unread=1]`, `GET/PUT/DELETE /api.php/admin/messages/{id}`, `POST /api.php/admin/sitemap`, `GET/POST /api.php/admin/admins`, `GET/PUT/DELETE /api.php/admin/admins/{id}`.
 - Inbox/sitemap mutation’lari session + CSRF talab qiladi. Admin-user endpoint’lari (`/api.php/admin/admins*`) `super` rolini talab qiladi. O‘z admin hisobini o‘chirish/deaktiv qilish, oxirgi faol adminni olib tashlash va oxirgi faol super adminni o‘chirish/deaktiv qilish/rolini pasaytirish `422` bilan bloklanadi; sitemap yozilmasa `500 sitemap_write_failed`.
 - Admin project slug’i `view` bo‘lishi mumkin emas — u fallback route bilan to‘qnashadi.
 - Bot ko‘prigi alohida shaxsiy kanal: webhook secret, `admin_users.is_active=1` ruxsati (jadval bo‘sh/yo‘q bo‘lsa `admin.telegram_id` bootstrap) va Telegram `secret_token` bilan himoyalangan; web panelda o‘chirilgan admin keyingi xabardan boshlab botdan foydalana olmaydi. Bot token, OTP va email parollari Telegram’ga chiqmaydi. Contact formasi saqlangandan keyin faol adminlarga (ko‘pi bilan 10 ta) best-effort Telegram xabar yuboriladi. cPanel IMAP hosti `panel2.eskiz.uz:993/imap/ssl`; `mail.otaboyev-sardorbek.uz` sertifikat hostname’iga mos kelmaydi.
@@ -126,8 +130,8 @@ Envelope: `{status:"ok",data:...}` yoki `{status:"error",message,code}`.
 2. `app/(redirect)/page.js` dagi `SUPPORTED`.
 3. `content/locales.js` dagi `LOCALES` (layout/page `generateStaticParams` shundan oladi).
 4. `.htaccess` locale, API exclusion, 404 va project fallback qoidalari.
-5. `sitemap.xml` — default 15 URL (3 home + 3 listing + 9 detail); admin proyekt qo‘shilganda/o‘chirilganda avtomatik qayta generatsiya qilinadi.
-6. `canonical` + `hreflang` — 3 home + 3 listing + 9 detail.
+5. `sitemap.xml` — default 18 URL (3 home + 3 listing + 9 detail + 3 privacy); admin proyekt qo‘shilganda/o‘chirilganda avtomatik qayta generatsiya qilinadi.
+6. `canonical` + `hreflang` — 3 home + 3 listing + 9 detail + 3 privacy.
 7. `components/ProjectDetail.jsx` dagi `.lang-switcher` va `[slug]/page.js` metadata.
 8. `database/seed.sql` tarjimalari (`profile_translations`, `project_translations`).
 
