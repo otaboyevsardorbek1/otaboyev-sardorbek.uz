@@ -91,7 +91,7 @@ mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
 mysql -u USER -p DB_NAME < database/migrate-admin-role.sql
 ```
 
-`migrate-project-sections.sql` adds `results` and `stack_notes`; it is a one-time, non-idempotent script. `migrate-contact-messages.sql`, `migrate-bot-guards.sql` and `migrate-admin-role.sql` are idempotent and safe to run again; the role migration adds `admin_users.role` (`super`/`admin`), its index and a one-time safety promotion of the earliest active admin when no active super admin exists. Re-import `database/seed.sql` **only** when resetting to the default content — it overwrites existing admin edits.
+`migrate-project-sections.sql` adds `results` and `stack_notes`; like the others it is idempotent (`information_schema` gates each `ALTER`), so all four migrations are safe to re-run. `migrate-contact-messages.sql` also creates `idx_contact_messages_ip (ip_hash, created_at)` for the per-IP rate-limit query; `migrate-bot-guards.sql` adds the bot idempotency/rate-limit tables; `migrate-admin-role.sql` adds `admin_users.role` (`super`/`admin`), its index and a one-time safety promotion of the earliest active admin when no active super admin exists. Re-import `database/seed.sql` **only** when resetting to the default content — it overwrites existing admin edits.
 
 ## 4. API contract
 
@@ -174,8 +174,8 @@ Migrations are applied to the production DB **before** the code that depends on 
 |---|---|---|---|
 | 1 | `database/schema.sql` | ✅ `CREATE TABLE IF NOT EXISTS` | Fresh install (new database) |
 | 2 | `database/seed.sql` | ✅ `INSERT ... ON DUPLICATE KEY UPDATE` | Demo content (1 profile, 3 projects, 9 translations) — **production only once, before admin edits** |
-| 3 | `database/migrate-project-sections.sql` | ❌ (one time) | `project_translations.results` + `stack_notes` |
-| 4 | `database/migrate-contact-messages.sql` | ✅ | `contact_messages` table |
+| 3 | `database/migrate-project-sections.sql` | ✅ (information_schema checks) | `project_translations.results` + `stack_notes` |
+| 4 | `database/migrate-contact-messages.sql` | ✅ | `contact_messages` table + `idx_contact_messages_ip` |
 | 5 | `database/migrate-bot-guards.sql` | ✅ | `bot_updates_seen`, `bot_rate_limit` |
 | 6 | `database/migrate-admin-role.sql` | ✅ (information_schema checks) | `admin_users.role` + `idx_admin_users_role` + first active admin promoted to `super` when no active super exists |
 
@@ -212,7 +212,7 @@ SHOW TABLES LIKE 'bot_updates_seen';
 SHOW TABLES LIKE 'bot_rate_limit';
 ```
 
-`migrate-admin-role.sql` is idempotent: `information_schema` gates the `ALTER` statements and the safety-net `UPDATE` runs only while no active super exists. CI imports it twice on a legacy-shaped database and asserts both runs succeed.
+`migrate-admin-role.sql` and `migrate-project-sections.sql` are idempotent: `information_schema` gates each `ALTER` (and the safety-net `UPDATE` runs only while no active super exists). CI drops the columns/indexes on a legacy-shaped database, imports both migrations twice and asserts both runs succeed.
 
 ### 6.3. Production deploy — order
 
@@ -226,6 +226,8 @@ Current production: source `/home/host9590/apps/otaboyev-sardorbek.uz`, web root
    cd /home/host9590/apps/otaboyev-sardorbek.uz
    git pull --ff-only origin main
 
+   mysql -u USER -p DB_NAME < database/migrate-project-sections.sql   # idempotent
+   mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql   # idempotent
    mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql      # idempotent
    mysql -u USER -p DB_NAME < database/migrate-admin-role.sql      # idempotent
 
@@ -430,7 +432,7 @@ send_update() {
 | 7.8.1 | `GET /api.php/bot/webhook` | `405`, `Allow: POST` |
 | 7.8.1a | `GET /api.php/bot/health` | `200`, `{configured,webhook_secret,imap,database}` — only booleans, no token/secret/password |
 | 7.8.1b | `POST /api.php/bot/health` | `405`, `Allow: GET` |
-| 7.8.1c | DB down + `/bot/health` | `200`, `database:false`; one `bot alert` line in the error log |
+| 7.8.1c | DB down + `/bot/health` | `200`, `database:false`; the endpoint has no side effects (no Telegram alert); `production-ops.sh cron` reports it once |
 | 7.8.2 | `POST` without secret | `403` |
 | 7.8.3 | `POST` with wrong secret | `403` |
 | 7.8.4 | `POST` correct secret, `from.id=999` (unknown) | `200 'ok'`, **no** Telegram message |
@@ -479,6 +481,8 @@ send_update() {
 | 7.9.5 | Fresh `schema.sql` | `role VARCHAR(20) NOT NULL DEFAULT 'admin'` |
 | 7.9.6 | First login on a legacy DB (no role) | safety net sets `role='super'` |
 | 7.9.7 | Empty `admin_users`, login with config ID | bootstrap `role='super'` |
+| 7.9.8 | `migrate-project-sections.sql` twice (legacy DB without columns) | OK (idempotent); both columns present |
+| 7.9.9 | `migrate-contact-messages.sql` twice (index dropped first) | OK (idempotent); `idx_contact_messages_ip` present |
 
 ### 7.10. Apache (`.htaccess`)
 
@@ -561,6 +565,15 @@ Owner decisions are required for locale parity (`en/*`), media upload and legacy
 - Bot bridge resolves permissions from `admin_users.is_active=1`, keeps per-admin rate limits, writes `admin_audit_log` rows, and adds `/whoami`, `/messages`, `/message`, `/unread`, `/reply`, `/stats`.
 - New contact submissions notify up to 10 active admins through Telegram without blocking the form.
 - `tests/bot-guard-test.php` covers pure helpers, `bot_find_admin`, per-admin rate limits, `update_id` idempotency and `bot_audit`; CI imports all migrations, verifies RBAC/bot guards statically and builds the export.
+
+**Consistency and hardening 2026-10-24:**
+
+- Every migration is idempotent now: `migrate-project-sections.sql` gates each `ALTER` with `information_schema`, and `migrate-contact-messages.sql` adds `idx_contact_messages_ip (ip_hash, created_at)` on old and new databases. CI drops the columns/index, imports the files twice and asserts success.
+- `production-ops.sh migrate` no longer warns about a one-time script; `verify` also checks bot `webhook_secret` and `database`, and the 5-minute monitor reports unconfigured bot, missing secret and DB outage once per incident (state files), clearing the alert on recovery.
+- OTP and bot email share one `admin_mail_send()` path (mail/SMTP/Resend/Brevo/log) with `Reply-To` support; `bot/health` is side-effect free and never triggers an alert.
+- Admin/contact validation counts UTF-8 characters for `VARCHAR` limits, so Uzbek/Russian content is neither rejected nor truncated; `TEXT` fields stay byte-limited.
+- `.htaccess` sends HSTS only on HTTPS (or `X-Forwarded-Proto: https`) responses; PHP already did.
+- `tests/bot-guard-test.php` now covers the shared mailer, OTP log marker, UTF-8 length helpers and an end-to-end Cyrillic contact submission (47 checks). The HTTP integration suite covers 118 checks.
 
 **Remaining:**
 

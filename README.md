@@ -25,7 +25,7 @@ Loyiha tuzilishi:
 - Shaxsiy Telegram bot: IMAP inbox, contact inbox, xat o‘qish/javob berish va cPanel orqali email yuborish (webhook secret + `admin_users` ruxsati)
 - Profil va loyihalarni uch tilda tahrirlash (CRUD), audit log va CSRF himoyasi
 - Inbox (read/unread/delete), adminlar boshqaruvi va avtomatik `sitemap.xml`
-- CSP/HSTS/frame/referrer/COOP/CORP xavfsizlik headerlari; `api.php` HSTS’ni faqat HTTPS’da yuboradi; API `X-Powered-By` olib tashlangan
+- CSP/HSTS/frame/referrer/COOP/CORP xavfsizlik headerlari; HSTS faqat HTTPS javoblarida (PHP va `.htaccess`); API `X-Powered-By` olib tashlangan
 - Haqiqiy 404 sahifa va Apache/Nginx routing
 - Responsive premium dark glassmorphism dizayn
 - Lokalizatsiya va sahifalar orasidagi navigatsiya
@@ -51,9 +51,9 @@ cPanel yoki lokal MySQL’da baza yarating va sxemani import qiling:
 ```bash
 mysql -u USER -p DB_NAME < database/schema.sql
 mysql -u USER -p DB_NAME < database/seed.sql
-# Eski (project sections qo‘shilishidan oldingi) baza uchun avval:
+# Eski bazani yangilash (hammasi idempotent, qayta ishlatish xavfsiz):
 # mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
-# Contact inbox jadvali uchun (idempotent):
+# Contact inbox jadvali + per-IP indeks uchun:
 # mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
 # Telegram bot guard jadvallari uchun (idempotent):
 # mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
@@ -239,9 +239,9 @@ php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
 ```bash
 mysql -u USER -p DB_NAME < database/schema.sql
 mysql -u USER -p DB_NAME < database/seed.sql
-# Eski (project sections qo‘shilishidan oldingi) baza uchun avval:
+# Eski bazani yangilash (hammasi idempotent, qayta ishlatish xavfsiz):
 # mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
-# Contact inbox jadvali uchun (idempotent):
+# Contact inbox jadvali + per-IP indeks uchun:
 # mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
 # Telegram bot guard jadvallari uchun (idempotent):
 # mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql
@@ -385,7 +385,7 @@ npm run build
 ### cPanel deploy
 
 1. cPanel → **MySQL Databases**: baza va foydalanuvchi yarating, foydalanuvchiga bazaga ruxsat bering.
-2. phpMyAdmin → **Import**: yangi baza uchun `database/schema.sql`, keyin `database/seed.sql`; eski bazada avval `database/migrate-project-sections.sql`, keyin `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql` va `database/migrate-admin-role.sql` (idempotent) ni import qiling. `seed.sql` mavjud admin tahrirlarini bosib ketadi.
+2. phpMyAdmin → **Import**: yangi baza uchun `database/schema.sql`, keyin `database/seed.sql`; eski bazada `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql` va `database/migrate-admin-role.sql` ni import qiling (hammasi idempotent, qayta import xavfsiz). `seed.sql` mavjud admin tahrirlarini bosib ketadi.
 3. `config.local.example.php` dan `config.local.php` yarating; DB, Telegram, email va `app_secret` ni to‘ldiring.
 4. Lokalda yoki Node mavjud muhitda `npm ci && npm run build`.
 5. `out/` ichidagi barcha fayllarni cPanel **File Manager** orqali `public_html/` ga yuklang. `out/` papkasining o‘zini emas, ichidagi `api.php`, `backend/`, `.htaccess`, `index.html`, `admin/`, `uz/`, `en/`, `ru/`, `_next/`, `files/` ni yuklang.
@@ -413,15 +413,15 @@ Serverda cPanel user sifatida ishlatiladi; har bir qadam idempotent. Deploy oldi
 
 ```bash
 cd /home/host9590/apps/otaboyev-sardorbek.uz
-./scripts/production-ops.sh migrate   # project-sections, contact-messages, bot-guards
+./scripts/production-ops.sh migrate   # project-sections, contact-messages, bot-guards, admin-role (idempotent)
 ./scripts/production-ops.sh deploy    # npm ci + check + build, keyin tar-deploy
 ./scripts/production-ops.sh logs      # user-level logrotate + kunlik cron
 ./scripts/production-ops.sh cron      # kunlik backup (14 kun) + 5 daqiqalik health/bot monitor
 ./scripts/production-ops.sh maildns   # SPF / DKIM / DMARC tekshiruvi
-./scripts/production-ops.sh verify    # 13 ta jonli HTTP tekshiruv
+./scripts/production-ops.sh verify    # jonli HTTP tekshiruvlari (bot secret + DB holati ham)
 ```
 
-Monitor har 5 daqiqada `/api.php/health` va `/api.php/bot/health` ni, shuningdek `getWebhookInfo.pending_update_count` ni tekshiradi; xato bo‘lsa Telegram orqali egasiga xabar yuboradi (`monitor.log` ga yozadi).
+Monitor har 5 daqiqada `/api.php/health` va `/api.php/bot/health` ni, shuningdek `getWebhookInfo.pending_update_count` ni tekshiradi. Bot tomonida `configured`, `webhook_secret` va `database` alohida kuzatiladi; har bir muammo bir marta xabar qilinadi va tiklanishda "yana ishlayapti" xabari keladi (`monitor.log` ga yoziladi).
 
 Faqat build qilingan artefaktni chiqarish uchun `SKIP_BUILD=1 ./scripts/production-ops.sh deploy`. Yo‘llar `APP_DIR`, `WEB_ROOT`, `BACKUP_DIR`, `LOG_DIR`, `SITE_URL` env bilan ustidan yoziladi. Backup va monitoring cron’lari `# otaboyev-ops:backup` / `# otaboyev-ops:monitor` belgilari bilan yangilanadi (dublikat yig‘ilmaydi).
 
@@ -599,9 +599,9 @@ Agar token yo‘q bo‘lsa yoki noto‘g‘ri bo‘lsa, API 401 JSON javob qayta
 ```bash
 mysql -u USER -p DB_NAME < database/schema.sql
 mysql -u USER -p DB_NAME < database/seed.sql
-# Eski (project sections qo‘shilishidan oldingi) baza uchun avval:
+# Eski bazani yangilash (hammasi idempotent, qayta ishlatish xavfsiz):
 # mysql -u USER -p DB_NAME < database/migrate-project-sections.sql
-# Contact inbox jadvali uchun (idempotent):
+# Contact inbox jadvali + per-IP indeks uchun:
 # mysql -u USER -p DB_NAME < database/migrate-contact-messages.sql
 # Telegram bot guard jadvallari uchun (idempotent):
 # mysql -u USER -p DB_NAME < database/migrate-bot-guards.sql

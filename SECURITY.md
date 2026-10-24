@@ -81,7 +81,7 @@ Qo‘shimcha: PHP 7.1 sintaksisi saqlanadi, `api.php` `display_errors=0` va `log
    - Email Deliverability bo‘limida SPF, DKIM, DMARC holatini tekshiring. Hozirgi serverda SPF `pass`, DKIM `none`, DMARC `p=none`; DKIM signing uchun root/WHM yoki provider amali kerak.
    - `ADMIN_MAIL_DRIVER=mail` (cPanel local) yoki `smtp`/`resend`/`brevo` tanlang.
 4. **App secret**: `php -r "echo bin2hex(random_bytes(32));"` bilan 64 belgili hex yarating.
-5. **MySQL**: yangi baza uchun `schema.sql` va `seed.sql` import qiling; mavjud bazada avval `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql` va `database/migrate-admin-role.sql` ni qo‘llang. `seed.sql` mavjud admin tahrirlarini bosib ketishini unutmang. Importdan keyin DB user’ga faqat `SELECT, INSERT, UPDATE, DELETE` bering; migratsiya uchun `CREATE`/`ALTER`/`DROP` ni vaqtincha qo‘shing.
+5. **MySQL**: yangi baza uchun `schema.sql` va `seed.sql` import qiling; mavjud bazada `database/migrate-project-sections.sql`, `database/migrate-contact-messages.sql`, `database/migrate-bot-guards.sql` va `database/migrate-admin-role.sql` ni qo‘llang (hammasi idempotent). `seed.sql` mavjud admin tahrirlarini bosib ketishini unutmang. Importdan keyin DB user’ga faqat `SELECT, INSERT, UPDATE, DELETE` bering; migratsiya uchun `CREATE`/`ALTER`/`DROP` ni vaqtincha qo‘shing.
 6. **Config**: `config.local.example.php` dan `config.local.php` yarating, lekin uni git’ga qo‘shmang. `/websites` endpointidan foydalansangiz, hosting environment’ida `API_TOKEN` ni ham o‘rnating.
 7. **Deploy**: `out/` tarkibini web rootga ko‘chiring; `backend/`, `config.local.php`, `.htaccess` joyida bo‘lsin; `github_keys.txt` web rootga ko‘chirilmasin.
 8. **Tekshirish**: `/admin/` ni HTTPS’da oching, Telegram widget’ni bosing, email kodni kiriting, profile va project saqlang.
@@ -254,8 +254,8 @@ otaboyev-sardorbek.uz/
 ├── database/                      755  ⛔ HTTP'dan yopilishi shart
 │   ├── schema.sql                 644
 │   ├── seed.sql                   644
-│   ├── migrate-project-sections.sql  644
-│   ├── migrate-contact-messages.sql  644
+│   ├── migrate-project-sections.sql  644  # idempotent
+│   ├── migrate-contact-messages.sql  644  # idempotent
 │   ├── migrate-bot-guards.sql      644  # idempotent
 │   └── migrate-admin-role.sql      644  # idempotent
 │
@@ -321,7 +321,7 @@ if (api_is_https()) {
 }
 ```
 
-HTTP’da HSTS header yo‘qligi test qilindi. `.htaccess` static javoblarga HSTS qo‘shadi; `includeSubDomains` ataylab yo‘q.
+HTTP’da HSTS header yo‘qligi test qilindi. `.htaccess` HSTS’ni faqat HTTPS (yoki `X-Forwarded-Proto: https`) javoblariga qo‘shadi; `includeSubDomains` ataylab yo‘q.
 
 ### 4.3. `Content-Security-Policy` — API uchun tor
 
