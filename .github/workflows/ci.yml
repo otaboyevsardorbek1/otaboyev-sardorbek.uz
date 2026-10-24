@@ -104,6 +104,26 @@ jobs:
           grep -q "setMyCommands" scripts/set-bot-commands.sh
           echo "OK: setMyCommands script"
 
+          echo "== .htaccess: HSTS only over HTTPS =="
+          grep -q "%{HTTPS} == 'on'" .htaccess
+          grep -q '^    Header always set Strict-Transport-Security' .htaccess
+          if grep -q '^Header always set Strict-Transport-Security' .htaccess; then
+            echo "HSTS header is unconditional in .htaccess" >&2
+            exit 1
+          fi
+          echo "OK: HSTS gated"
+
+          echo "== shared mailer path =="
+          grep -q "function admin_mail_send" backend/mailer.php
+          grep -q "admin_mail_send(" backend/bot.php
+          grep -q "admin_mail_send(" backend/admin.php
+          echo "OK: one delivery path"
+
+          echo "== contact IP index =="
+          grep -q "idx_contact_messages_ip" database/schema.sql
+          grep -q "idx_contact_messages_ip" database/migrate-contact-messages.sql
+          echo "OK: contact rate-limit index"
+
       - name: Wait for MySQL
         run: |
           for i in $(seq 1 30); do
