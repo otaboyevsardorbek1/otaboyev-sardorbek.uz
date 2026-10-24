@@ -78,7 +78,8 @@ CREATE TABLE IF NOT EXISTS contact_messages (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_contact_messages_unread (is_read, created_at),
-  KEY idx_contact_messages_created (created_at)
+  KEY idx_contact_messages_created (created_at),
+  KEY idx_contact_messages_ip (ip_hash, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------

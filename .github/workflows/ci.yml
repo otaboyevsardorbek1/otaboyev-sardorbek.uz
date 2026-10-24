@@ -188,6 +188,43 @@ jobs:
           [ -n "$IDX" ] || { echo "idx_admin_users_role missing after second run" >&2; exit 1; }
           echo "OK: role migration idempotent"
 
+      - name: Project-sections migration on legacy-shaped DB
+        env:
+          MYSQL_PWD: test
+        run: |
+          set -e
+          # Simulate a DB created before detail sections existed.
+          mysql -h 127.0.0.1 -utest test_portfolio -e \
+            "ALTER TABLE project_translations DROP COLUMN results, DROP COLUMN stack_notes;"
+          mysql -h 127.0.0.1 -utest test_portfolio -N -e \
+            "SHOW COLUMNS FROM project_translations LIKE 'results'" | grep -q . \
+            && { echo "results column still present after drop" >&2; exit 1; } || true
+
+          # Apply twice: the second run must be a no-op, not a duplicate-column error.
+          mysql -h 127.0.0.1 -utest test_portfolio < database/migrate-project-sections.sql
+          mysql -h 127.0.0.1 -utest test_portfolio < database/migrate-project-sections.sql
+
+          mysql -h 127.0.0.1 -utest test_portfolio -N -e \
+            "SHOW COLUMNS FROM project_translations LIKE 'results'" | grep -qE '^results[[:space:]]+text'
+          mysql -h 127.0.0.1 -utest test_portfolio -N -e \
+            "SHOW COLUMNS FROM project_translations LIKE 'stack_notes'" | grep -qE '^stack_notes[[:space:]]+text'
+          echo "OK: project-sections migration idempotent"
+
+      - name: Contact-messages migration is idempotent
+        env:
+          MYSQL_PWD: test
+        run: |
+          set -e
+          # The fresh schema already created the index; drop it so the ALTER path
+          # is exercised, then run the migration twice.
+          mysql -h 127.0.0.1 -utest test_portfolio -e \
+            "ALTER TABLE contact_messages DROP INDEX idx_contact_messages_ip;"
+          mysql -h 127.0.0.1 -utest test_portfolio < database/migrate-contact-messages.sql
+          mysql -h 127.0.0.1 -utest test_portfolio < database/migrate-contact-messages.sql
+          IDX="$(mysql -h 127.0.0.1 -utest test_portfolio -N -e "SHOW INDEX FROM contact_messages WHERE Key_name='idx_contact_messages_ip'")"
+          [ -n "$IDX" ] || { echo "idx_contact_messages_ip missing" >&2; exit 1; }
+          echo "OK: contact-messages migration idempotent"
+
       - name: Last-super guard SQL
         env:
           MYSQL_PWD: test

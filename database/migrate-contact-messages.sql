@@ -21,5 +21,21 @@ CREATE TABLE IF NOT EXISTS contact_messages (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_contact_messages_unread (is_read, created_at),
-  KEY idx_contact_messages_created (created_at)
+  KEY idx_contact_messages_created (created_at),
+  KEY idx_contact_messages_ip (ip_hash, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Existing installations created before the per-IP flood guard need the
+-- composite index too. Creating it separately keeps this file idempotent.
+SET @has_ip_index := (
+  SELECT COUNT(*) FROM information_schema.STATISTICS
+   WHERE TABLE_SCHEMA = DATABASE()
+     AND TABLE_NAME = 'contact_messages'
+     AND INDEX_NAME = 'idx_contact_messages_ip'
+);
+SET @sql := IF(@has_ip_index = 0,
+  'ALTER TABLE contact_messages ADD KEY idx_contact_messages_ip (ip_hash, created_at)',
+  'DO 0');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
