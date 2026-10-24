@@ -48,8 +48,12 @@ require_config() {
 check_build() {
   [ -f "$APP_DIR/out/api.php" ] || die "$APP_DIR/out is not a build artifact"
   [ -f "$APP_DIR/out/404.html" ] || die "$APP_DIR/out/404.html missing"
-  if [ -e "$APP_DIR/out/config.local.php" ] || [ -e "$APP_DIR/out/github_keys.txt" ]; then
+  if [ -e "$APP_DIR/out/config.local.php" ] || [ -e "$APP_DIR/out/github_keys.txt" ] \
+    || [ -e "$APP_DIR/out/config.local.js" ] || [ -e "$APP_DIR/out/server_keys.txt" ]; then
     die "secret file inside out/ - refusing to deploy"
+  fi
+  if [ -d "$APP_DIR/out/database" ]; then
+    die "database/ inside out/ - refusing to deploy"
   fi
 }
 
@@ -81,6 +85,9 @@ do_migrate() {
 
   log "verifying admin role column"
   mysql "${args[@]}" -N -e "SHOW COLUMNS FROM admin_users LIKE 'role';"
+
+  log "verifying contact rate-limit index"
+  mysql "${args[@]}" -N -e "SHOW INDEX FROM contact_messages WHERE Key_name = 'idx_contact_messages_ip';"
   unset MYSQL_PWD
 }
 
