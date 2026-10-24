@@ -83,7 +83,11 @@ Header always set X-Download-Options "noopen"
 # Do not add includeSubDomains/preload on shared hosting: other subdomains
 # may still be HTTP-only and would become unreachable. Enable them only after
 # every subdomain is HTTPS-ready.
-Header always set Strict-Transport-Security "max-age=31536000"
+# Only send HSTS over HTTPS. Browsers ignore it on plain HTTP, and hiding that
+# misconfiguration makes local/preview checks misleading.
+<If "%{HTTPS} == 'on' || %{HTTP:X-Forwarded-Proto} =~ m#https#i">
+    Header always set Strict-Transport-Security "max-age=31536000"
+</If>
 
 # =====================================================================
 # CORS SAFETY NET
