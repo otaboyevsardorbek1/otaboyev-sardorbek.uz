@@ -69,7 +69,7 @@ function admin_mail_http_post($url, array $headers, $payload, $timeout)
     return array(true, '');
 }
 
-function admin_mail_send_smtp(array $mail, $to, $subject, $text, $html)
+function admin_mail_send_smtp(array $mail, $to, $subject, $text, $html, $replyTo = '')
 {
     $host = admin_mail_clean_header($mail['smtp_host']);
     $port = (int) $mail['smtp_port'];
@@ -79,6 +79,10 @@ function admin_mail_send_smtp(array $mail, $to, $subject, $text, $html)
     $from = admin_mail_clean_header($mail['from']);
     $to = admin_mail_clean_header($to);
     $fromHeader = admin_mail_from_header($mail);
+    $replyTo = admin_mail_clean_header($replyTo);
+    if ($replyTo !== '' && filter_var($replyTo, FILTER_VALIDATE_EMAIL) === false) {
+        $replyTo = '';
+    }
 
     if ($host === '' || $port < 1 || $port > 65535) {
         return array(false, 'SMTP is not configured');
@@ -188,6 +192,7 @@ function admin_mail_send_smtp(array $mail, $to, $subject, $text, $html)
         . 'From: ' . $fromHeader . "\r\n"
         . 'To: ' . $to . "\r\n"
         . 'Subject: ' . admin_mail_clean_header($subject) . "\r\n"
+        . ($replyTo !== '' ? 'Reply-To: ' . $replyTo . "\r\n" : '')
         . 'MIME-Version: 1.0' . "\r\n"
         . 'Content-Type: multipart/alternative; boundary="' . $boundary . '"' . "\r\n";
     $body = '--' . $boundary . "\r\n"
@@ -212,6 +217,112 @@ function admin_mail_send_smtp(array $mail, $to, $subject, $text, $html)
     return array(true, '');
 }
 
+// Single delivery path for every non-OTP message (admin notifications and bot
+// replies). It keeps Reply-To working for all drivers, including SMTP, Resend
+// and Brevo. `$logExtra` is appended to the local log line so the OTP test can
+// still read `code=123456` without writing that line in production.
+function admin_mail_send($to, $subject, $text, $html, $replyTo = '', $logExtra = '')
+{
+    $config = admin_config();
+    $mail = $config['mail'];
+    $to = admin_mail_clean_header($to);
+    $subject = admin_mail_clean_header($subject);
+    $replyTo = admin_mail_clean_header($replyTo);
+    if ($replyTo !== '' && filter_var($replyTo, FILTER_VALIDATE_EMAIL) === false) {
+        $replyTo = '';
+    }
+
+    $from = admin_mail_clean_header($mail['from']);
+    if (filter_var($to, FILTER_VALIDATE_EMAIL) === false) {
+        return array(false, 'Invalid recipient');
+    }
+    if (filter_var($from, FILTER_VALIDATE_EMAIL) === false) {
+        return array(false, 'Invalid sender');
+    }
+    if ($subject === '' || (string) $text === '') {
+        return array(false, 'Subject and body are required');
+    }
+
+    $driver = strtolower((string) $mail['driver']);
+
+    if ($driver === 'log') {
+        if ($config['app_env'] === 'production' || $mail['log_file'] === '') {
+            return array(false, 'Log mail driver is disabled');
+        }
+        $line = gmdate('c') . ' to=' . $to . ' subject=' . $subject . $logExtra
+            . ' body=' . (string) $text . "\n";
+        $written = @file_put_contents($mail['log_file'], $line, FILE_APPEND | LOCK_EX);
+        return $written === false ? array(false, 'Unable to write mail log') : array(true, '');
+    }
+
+    if ($driver === 'resend') {
+        if ($mail['resend_api_key'] === '') {
+            return array(false, 'Resend is not configured');
+        }
+        $payload = array(
+            'from' => admin_mail_from_header($mail),
+            'to' => array($to),
+            'subject' => $subject,
+            'text' => (string) $text,
+            'html' => (string) $html,
+        );
+        if ($replyTo !== '') {
+            $payload['reply_to'] = $replyTo;
+        }
+        return admin_mail_http_post(
+            'https://api.resend.com/emails',
+            array('Authorization: Bearer ' . $mail['resend_api_key'], 'Content-Type: application/json'),
+            json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            12
+        );
+    }
+
+    if ($driver === 'brevo') {
+        if ($mail['brevo_api_key'] === '') {
+            return array(false, 'Brevo is not configured');
+        }
+        $payload = array(
+            'sender' => array('name' => $mail['from_name'], 'email' => $from),
+            'to' => array(array('email' => $to)),
+            'subject' => $subject,
+            'textContent' => (string) $text,
+            'htmlContent' => (string) $html,
+        );
+        if ($replyTo !== '') {
+            $payload['replyTo'] = array('email' => $replyTo);
+        }
+        return admin_mail_http_post(
+            'https://api.brevo.com/v3/smtp/email',
+            array('api-key: ' . $mail['brevo_api_key'], 'Content-Type: application/json'),
+            json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            12
+        );
+    }
+
+    if ($driver === 'smtp') {
+        return admin_mail_send_smtp($mail, $to, $subject, $text, $html, $replyTo);
+    }
+
+    if (function_exists('mail')) {
+        $boundary = 'b' . bin2hex(random_bytes(12));
+        $headers = 'MIME-Version: 1.0' . "\r\n"
+            . 'From: ' . admin_mail_from_header($mail) . "\r\n"
+            . 'Reply-To: ' . ($replyTo !== '' ? $replyTo : $from) . "\r\n"
+            . 'Content-Type: multipart/alternative; boundary="' . $boundary . '"' . "\r\n";
+        $body = '--' . $boundary . "\r\n"
+            . "Content-Type: text/plain; charset=UTF-8\r\n"
+            . "Content-Transfer-Encoding: 8bit\r\n\r\n" . (string) $text . "\r\n"
+            . '--' . $boundary . "\r\n"
+            . "Content-Type: text/html; charset=UTF-8\r\n"
+            . "Content-Transfer-Encoding: 8bit\r\n\r\n" . (string) $html . "\r\n"
+            . '--' . $boundary . "--\r\n";
+        $sent = @mail($to, $subject, $body, $headers, '-f ' . $from);
+        return $sent ? array(true, '') : array(false, 'mail() failed');
+    }
+
+    return array(false, 'No mail driver available');
+}
+
 function admin_send_login_code($to, $code, $ttlMinutes)
 {
     $config = admin_config();
@@ -225,75 +336,5 @@ function admin_send_login_code($to, $code, $ttlMinutes)
     }
 
     list($subject, $text, $html) = admin_mail_message($code, $ttlMinutes);
-    $driver = strtolower((string) $mail['driver']);
-
-    if ($driver === 'log') {
-        if ($config['app_env'] === 'production' || $mail['log_file'] === '') {
-            return array(false, 'Log mail driver is disabled');
-        }
-        $line = gmdate('c') . ' to=' . $to . ' code=' . $code . "\n";
-        $written = @file_put_contents($mail['log_file'], $line, FILE_APPEND | LOCK_EX);
-        return $written === false ? array(false, 'Unable to write mail log') : array(true, '');
-    }
-
-    if ($driver === 'resend') {
-        if ($mail['resend_api_key'] === '') {
-            return array(false, 'Resend is not configured');
-        }
-        $payload = json_encode(array(
-            'from' => admin_mail_from_header($mail),
-            'to' => array($to),
-            'subject' => $subject,
-            'text' => $text,
-            'html' => $html,
-        ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        return admin_mail_http_post(
-            'https://api.resend.com/emails',
-            array('Authorization: Bearer ' . $mail['resend_api_key'], 'Content-Type: application/json'),
-            $payload,
-            12
-        );
-    }
-
-    if ($driver === 'brevo') {
-        if ($mail['brevo_api_key'] === '') {
-            return array(false, 'Brevo is not configured');
-        }
-        $payload = json_encode(array(
-            'sender' => array('name' => $mail['from_name'], 'email' => $mail['from']),
-            'to' => array(array('email' => $to)),
-            'subject' => $subject,
-            'textContent' => $text,
-            'htmlContent' => $html,
-        ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        return admin_mail_http_post(
-            'https://api.brevo.com/v3/smtp/email',
-            array('api-key: ' . $mail['brevo_api_key'], 'Content-Type: application/json'),
-            $payload,
-            12
-        );
-    }
-
-    if ($driver === 'smtp') {
-        return admin_mail_send_smtp($mail, $to, $subject, $text, $html);
-    }
-
-    if (function_exists('mail')) {
-        $boundary = 'b' . bin2hex(random_bytes(12));
-        $headers = 'MIME-Version: 1.0' . "\r\n"
-            . 'From: ' . admin_mail_from_header($mail) . "\r\n"
-            . 'Reply-To: ' . admin_mail_clean_header($mail['from']) . "\r\n"
-            . 'Content-Type: multipart/alternative; boundary="' . $boundary . '"' . "\r\n";
-        $body = '--' . $boundary . "\r\n"
-            . "Content-Type: text/plain; charset=UTF-8\r\n"
-            . "Content-Transfer-Encoding: 8bit\r\n\r\n" . $text . "\r\n"
-            . '--' . $boundary . "\r\n"
-            . "Content-Type: text/html; charset=UTF-8\r\n"
-            . "Content-Transfer-Encoding: 8bit\r\n\r\n" . $html . "\r\n"
-            . '--' . $boundary . "--\r\n";
-        $sent = @mail($to, $subject, $body, $headers, '-f ' . admin_mail_clean_header($mail['from']));
-        return $sent ? array(true, '') : array(false, 'mail() failed');
-    }
-
-    return array(false, 'No mail driver available');
+    return admin_mail_send($to, $subject, $text, $html, '', ' code=' . $code);
 }
