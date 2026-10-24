@@ -1,12 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Sardorbek Otaboyev favicon">
-  <defs>
-    <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
-      <stop offset="0%" stop-color="#7c9cff"/>
-      <stop offset="100%" stop-color="#4ef2d8"/>
-    </linearGradient>
-  </defs>
-  <rect width="128" height="128" rx="28" fill="#07111f"/>
-  <rect x="8" y="8" width="112" height="112" rx="24" fill="url(#bg)" opacity="0.14"/>
-  <path d="M36 32h52c8.8 0 16 7.2 16 16v7.5c0 8.7-7.1 15.8-15.9 15.8H51.8l15.4 18.1H42.6L28 78.8h19.7c-6.4 0-11.6-5.2-11.6-11.6V48c0-8.8 7.2-16 16-16zm16 18.7h20.1c3.8 0 6.8 3 6.8 6.8V58c0 3.8-3 6.8-6.8 6.8H52V50.7z" fill="url(#bg)"/>
-  <circle cx="95" cy="36" r="8" fill="#ff7d5c" opacity="0.9"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" aria-label="Sardorbek Otaboyev favicon" role="img" viewBox="0 0 128 128"><defs><linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%"><stop offset="0%" stop-color="#7c9cff"/><stop offset="100%" stop-color="#4ef2d8"/></linearGradient></defs><rect width="128" height="128" fill="#07111f" rx="28"/><rect width="112" height="112" x="8" y="8" fill="url(#bg)" opacity=".14" rx="24"/><path fill="url(#bg)" d="M36 32h52c8.8 0 16 7.2 16 16v7.5c0 8.7-7.1 15.8-15.9 15.8H51.8l15.4 18.1H42.6L28 78.8h19.7c-6.4 0-11.6-5.2-11.6-11.6V48c0-8.8 7.2-16 16-16zm16 18.7h20.1c3.8 0 6.8 3 6.8 6.8V58c0 3.8-3 6.8-6.8 6.8H52V50.7z"/><circle cx="95" cy="36" r="8" fill="#ff7d5c" opacity=".9"/></svg>
