@@ -856,13 +856,26 @@ function admin_valid_url($value, $allowEmpty)
     return $scheme === 'http' || $scheme === 'https';
 }
 
+// VARCHAR limits in MySQL are characters, not bytes. Count UTF-8 characters so
+// an Uzbek/Russian field is not rejected for exceeding a byte limit it never
+// hits in the database. Falls back to preg_match_all when mbstring is absent.
+function admin_strlen($value)
+{
+    $value = (string) $value;
+    if (function_exists('mb_strlen')) {
+        return (int) mb_strlen($value, 'UTF-8');
+    }
+    $count = preg_match_all('/./us', $value);
+    return $count === false ? strlen($value) : (int) $count;
+}
+
 function admin_text($value, $max, $allowEmpty)
 {
     $value = is_scalar($value) ? trim((string) $value) : '';
     if (!$allowEmpty && $value === '') {
         return null;
     }
-    if (strlen($value) > $max) {
+    if (admin_strlen($value) > $max) {
         return null;
     }
     return $value;
@@ -886,7 +899,7 @@ function admin_string_list($input, $maxItems, $maxLength)
         if ($item === '') {
             continue;
         }
-        if (strlen($item) > $maxLength) {
+        if (admin_strlen($item) > $maxLength) {
             return array(null, 'item_too_long');
         }
         $list[] = $item;

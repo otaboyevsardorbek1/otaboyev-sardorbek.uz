@@ -132,6 +132,31 @@ function contact_limit_text($value, $max)
     return substr($value, 0, $max);
 }
 
+// Count UTF-8 characters, not bytes, so a Cyrillic name or subject fits the
+// VARCHAR limits it will be stored in. Message length stays byte-based because
+// the column is TEXT (64 KB).
+function contact_strlen($value)
+{
+    $value = (string) $value;
+    if (function_exists('mb_strlen')) {
+        return (int) mb_strlen($value, 'UTF-8');
+    }
+    $count = preg_match_all('/./us', $value);
+    return $count === false ? strlen($value) : (int) $count;
+}
+
+function contact_limit_chars($value, $max)
+{
+    $value = (string) $value;
+    if (contact_strlen($value) <= $max) {
+        return $value;
+    }
+    if (function_exists('mb_substr')) {
+        return mb_substr($value, 0, $max, 'UTF-8');
+    }
+    return substr($value, 0, $max);
+}
+
 function contact_ip_hash()
 {
     $ip = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
@@ -175,9 +200,9 @@ function contact_store_message(array $formConfig, $formId, array $data, array $a
         $locale = null;
     }
 
-    $name = $extracted['name'] !== '' ? contact_limit_text($extracted['name'], 160) : null;
-    $email = $extracted['email'] !== '' ? contact_limit_text($extracted['email'], 190) : null;
-    $subject = $extracted['subject'] !== '' ? contact_limit_text($extracted['subject'], 255) : null;
+    $name = $extracted['name'] !== '' ? contact_limit_chars($extracted['name'], 160) : null;
+    $email = $extracted['email'] !== '' ? contact_limit_chars($extracted['email'], 190) : null;
+    $subject = $extracted['subject'] !== '' ? contact_limit_chars($extracted['subject'], 255) : null;
     $message = $extracted['message'] !== '' ? contact_limit_text($extracted['message'], 60000) : null;
     $userAgent = isset($_SERVER['HTTP_USER_AGENT']) ? substr((string) $_SERVER['HTTP_USER_AGENT'], 0, 255) : null;
 
@@ -280,13 +305,13 @@ function contact_native_submit(array $payload)
     }
     list($name, $email, $subject, $message) = $values;
 
-    if (strlen($name) < 2 || strlen($name) > 160) {
+    if (contact_strlen($name) < 2 || contact_strlen($name) > 160) {
         return array(false, 'Please enter your name.', 422);
     }
     if (filter_var($email, FILTER_VALIDATE_EMAIL) === false || strlen($email) > 190) {
         return array(false, 'Please enter a valid email address.', 422);
     }
-    if (strlen($subject) < 2 || strlen($subject) > 255) {
+    if (contact_strlen($subject) < 2 || contact_strlen($subject) > 255) {
         return array(false, 'Please enter a subject.', 422);
     }
     if (strlen($message) < 2 || strlen($message) > 60000) {
